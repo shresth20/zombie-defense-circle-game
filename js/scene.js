@@ -1736,7 +1736,7 @@ window.ZD = window.ZD || {};
       // heroLeapCore is for hero.sideLeap, whose mid-air frames sit higher
       this.heroCore = Math.round(150 * this.heroScale);
       this.heroLeapCore = Math.round(205 * this.heroScale);
-      // zombie cores are read per skin from the sheets (see zombieCore)
+      // zombie cores are read per skin from the sheets (see _zombieCore)
 
       // characters
       this.heroHome = { x: 330, y: this.groundY };
@@ -2183,17 +2183,12 @@ window.ZD = window.ZD || {};
     }
 
     /* Feet -> torso distance (scaled px) of the current zombie skin, measured
-       by the asset build: `core` of the sheet, in sheet px.  zombieCore is
-       the running body (the throw-back arc), zombieLeapCore the mid-air
-       frames of zombie.side.leap - the torso is what flies through the
-       circle's centre. */
+       by the asset build: `core` of the sheet, in sheet px.  zombieLeapCore
+       is the mid-air frames of zombie.side.leap - the torso is what flies
+       through the circle's centre. */
     _zombieCore(name) {
       const s = A.sprite(this.zombie.resolve(name));
       return Math.round((s.core || 0) * (s.scaleAdjust || 1) * this.zombieScale);
-    }
-
-    get zombieCore() {
-      return this._zombieCore('zombie.side.run');
     }
 
     get zombieLeapCore() {

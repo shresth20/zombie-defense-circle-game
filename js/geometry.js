@@ -137,9 +137,6 @@ window.ZD = window.ZD || {};
          rule*   one-line rule, repeated on the walk to the next wall */
     labelKey: (p) => I18n.key('piece', pieceId(p)),
     ruleKey: (p) => I18n.key('rule', pieceId(p)),
-    /* why a gap is that piece (two short sentences) - not shown now (the
-       review card explains by animation); kept for a future narration */
-    reasonKey: (p) => I18n.key('reason', pieceId(p)),
     /* Correctness is decided from data, never from pixels. */
     matches: (a, b) => pieceId(a) === pieceId(b),
     /* Mid-angle of a piece, handy for placing labels. */

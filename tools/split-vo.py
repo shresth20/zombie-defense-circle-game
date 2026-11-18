@@ -3,14 +3,16 @@
 
 LOCAL BUILD TOOL ONLY - nothing here uses the network (no ElevenLabs, no
 downloads): Whisper runs on this machine from its cached model.  The output
-(assets/VO-<LANG>/*.mp3 + manifest.json/.js) is committed and loads offline.
+(assets/VO-<LANG>/*.webm + *.mp3 + manifest.json/.js) is committed and loads
+offline.
 
 A recording is a list of sentences read once, in order, with a pause between
 them - normally the whole script as `python3 tools/build-vo.py --list` prints
 it.  Run with uv (cached packages, no network):
 
   HF_HUB_OFFLINE=1 uv run --offline --no-project --python 3.11 \\
-      --with faster-whisper --with soundfile python tools/split-vo.py RAW.mp3
+      --with faster-whisper --with soundfile --with imageio-ffmpeg \\
+      python tools/split-vo.py RAW.mp3
 
   --script S   what was read, if not today's script: a text file (one sentence
                per line) or git:<rev> (the script as of that commit)
@@ -34,8 +36,9 @@ How it works:
      starts where the sound comes back.
   4. Each game line gets the recorded line with the same words (case and
      punctuation aside), or the part of one before/after a pause ('Time up!'
-     from 'Time up. It was a minor arc.').  Clips: mono MP3 (VBR ~80 kbps),
-     5 ms fades.  The manifest keeps each word's start as [charOffset, sec]
+     from 'Time up. It was a minor arc.').  Clips: mono WebM/Opus 32 kbps
+     (what the game plays) + mono MP3 (VBR ~80 kbps, the fallback where the
+     browser has no Opus), 5 ms fades.  The manifest keeps each word's start as [charOffset, sec]
      against the caption text (no *marks*), as js/i18n.js and js/ui.js read.
 """
 import argparse, glob, importlib.util, itertools, json, math, os, re, subprocess, tempfile
@@ -423,6 +426,7 @@ def main():
     if not a.raw:
         ap.error('the raw recording is needed (or --missing)')
 
+    bvo.ffmpeg_exe()  # (the .webm clips need it: fail now, not after Whisper)
     from faster_whisper import WhisperModel
 
     read = read_script(a.script, bvo)
@@ -454,7 +458,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     if not a.add:
         have = {}
-        for f in glob.glob(os.path.join(out, '*.mp3')):
+        for f in glob.glob(os.path.join(out, '*.mp3')) + glob.glob(os.path.join(out, '*.webm')):
             os.remove(f)
     used, made = set(), []
     for cid, _, text in lines:
@@ -467,6 +471,7 @@ def main():
         y, st, en = cut(t, i, j, sr)
         sf.write(os.path.join(out, cid + '.mp3'), y, sr, format='MP3', subtype='MPEG_LAYER_III',
                  compression_level=0.5, bitrate_mode='VARIABLE')
+        bvo.write_webm(os.path.join(out, cid + '.webm'), pcm=y, sr=sr)
         words, k = [], 0
         for off, sp in toks:
             if sp:
@@ -485,19 +490,20 @@ def main():
     ids = {cid for cid, _, _ in lines}
     for cid in [c for c in have if c not in ids]:  # lines the game no longer has
         del have[cid]
-        if os.path.exists(os.path.join(out, cid + '.mp3')):
-            os.remove(os.path.join(out, cid + '.mp3'))
+        for ext in ('.mp3', '.webm'):
+            if os.path.exists(os.path.join(out, cid + ext)):
+                os.remove(os.path.join(out, cid + ext))
     man = {
         '_comment': 'Built by tools/split-vo.py from raw recordings. clips: id -> {text, dur, '
                     'words:[[charOffset, startSec]]}. Ids not listed fall back to browser speech.',
         'voice': (a.voice or old.get('voice')) if a.add else (a.voice or voice_name(a.raw)),
         'sources': (old.get('sources', []) if a.add else []) + [
             {'file': os.path.basename(a.raw), 'script': a.script or 'current'}],
-        'format': f'mp3 mono {sr} Hz VBR',
+        'format': f'webm opus mono {bvo.VO_OPUS} (+ mp3 mono {sr} Hz VBR fallback)',
         'clips': dict(sorted(have.items())),
     }
     write_manifest(out, man, bvo)
-    size = sum(os.path.getsize(p) for p in glob.glob(os.path.join(out, '*.mp3')))
+    size = sum(os.path.getsize(p) for p in glob.glob(os.path.join(out, '*.webm')))
     print(f'\n{len(made)} clips cut, {len(have)} in the manifest, {size / 1e6:.2f} MB -> {os.path.relpath(out, ROOT)}')
     spare = [t['text'] for t in takes if t['text'] not in used]
     if spare:

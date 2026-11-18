@@ -412,7 +412,7 @@ function analyse(events) {
         settled: ZD.perf.lastSettled || '',
         controls: !!document.querySelector('#controls.visible'),
         jump: !!document.querySelector('.ctrl-btn.jump.hint'),
-        retry: !!document.querySelector('.go-retry'),
+        retry: !!document.querySelector('.review-btn'),
         done: !!document.querySelector('#complete.visible'),
       }));
       if (opt('raster-scale', false) && s.wall !== traceWall) {
@@ -431,7 +431,7 @@ function analyse(events) {
       }
       // --until-wall N: stop when wall N comes up (a quicker A/B of the first runs)
       if (opt('until-wall', null) && typeof s.wall === 'number' && s.wall >= Number(opt('until-wall'))) break;
-      if (s.retry) await page.click('.go-retry').catch(() => {});
+      if (s.retry) await page.click('.review-btn').catch(() => {});
       if (s.controls && !running) await page.keyboard.down('ArrowRight'), (running = true);
       if (!s.controls && running) await page.keyboard.up('ArrowRight'), (running = false);
       if (s.jump) await page.keyboard.press('Space');

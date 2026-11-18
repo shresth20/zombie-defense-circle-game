@@ -1023,6 +1023,15 @@ canvas.wash {
   color: #fff;
   text-align: center;
 }
+/* one circle only: a square card (~800 px), its content centred */
+.review-card.single {
+  width: 800px;
+  aspect-ratio: 1 / 1;
+  padding: 50px 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .review-pair { display: flex; justify-content: center; gap: 160px; }
 .review-item { display: flex; flex-direction: column; align-items: center; width: 624px; }
 /* drawn on a 400-unit viewBox (reviewCircle in js/ui.js), shown at 480 px:

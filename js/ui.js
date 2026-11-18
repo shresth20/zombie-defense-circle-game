@@ -644,7 +644,8 @@ window.ZD = window.ZD || {};
       if (chosen && thrown) parts.push(item(thrown, chosen, false, 1));
       // no title on the card (the circles say it); reviewTitle still names
       // the dialog for a screen reader
-      const card = el('div', { class: 'review-card', role: 'dialog', 'aria-label': T('reviewTitle') }, [
+      // one circle (time ran out / only the answer) = a square card
+      const card = el('div', { class: 'review-card' + (parts.length === 1 ? ' single' : ''), role: 'dialog', 'aria-label': T('reviewTitle') }, [
         el('div', { class: 'review-pair' }, parts.map((p) => p.el)),
       ]);
       const btn = ui.replayButton(button);

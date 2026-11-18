@@ -1,7 +1,8 @@
 /* game-i18n: key-based text + voice-over.
    ------------------------------------------------------------------
    Text   : T('key', {vars})      HTML: <span data-i18n="key">
-   Voice  : I18n.say('key', vars) -> plays assets/VO-<LANG>/<clip>.mp3 when the
+   Voice  : I18n.say('key', vars) -> plays assets/VO-<LANG>/<clip>.webm (Opus;
+            <clip>.mp3 where the browser has no Opus in WebM) when the
             clip is listed in assets/VO-<LANG>/manifest.js, otherwise speaks
             T(key) with the browser speech engine (captions are always shown).
             A line with {vars} has one clip per value: <key>_<tag>[_<tag>]
@@ -21,6 +22,9 @@
   let lang = 'en';
   /* false = no read-aloud at all (no clips, no browser speech). */
   const VOICE_ON = true;
+  /* the clips' file type: WebM (Opus) is half the size; the MP3 copy is the
+     fallback (same test as the theme music in js/core/audio.js) */
+  const VO_EXT = new Audio().canPlayType('audio/webm; codecs="opus"') ? 'webm' : 'mp3';
   let voiceClips = {}; // clip id -> { text, dur, words: [[charOffset, startSec]] }
   const clipBlobs = {}; // clip id -> blob: URL (downloaded by the preloader)
   let currentClip = null;
@@ -66,7 +70,7 @@
     },
     /* File of a clip id (the preloaded copy when there is one). */
     voice(id) {
-      return clipBlobs[id] || `assets/VO-${lang.toUpperCase()}/${id}.mp3`;
+      return clipBlobs[id] || clipFile(id);
     },
     /* The clip id of a line: key + one tag per {var} in the English text. */
     clipId(key, vars) {
@@ -112,7 +116,7 @@
     },
     /* Preloader hooks: resolves the clip files once the manifest is in. */
     voiceFiles() {
-      return voiceReady.then(() => Object.keys(voiceClips).map((id) => ({ id, src: `assets/VO-${lang.toUpperCase()}/${id}.mp3` })));
+      return voiceReady.then(() => Object.keys(voiceClips).map((id) => ({ id, src: clipFile(id) })));
     },
     useClipBlob(id, blob) {
       if (blob && !clipBlobs[id]) clipBlobs[id] = URL.createObjectURL(blob);
@@ -148,6 +152,10 @@
         .catch(useScript); // offline / odd hosting: fall back to the generated locales.js
     },
   };
+
+  function clipFile(id) {
+    return `assets/VO-${lang.toUpperCase()}/${id}.${VO_EXT}`;
+  }
 
   /* The clip of the line (or browser speech when there is none). */
   function sayLine(key, vars, start) {

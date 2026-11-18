@@ -185,7 +185,7 @@ js/
 locales/locales.json       learner-facing strings — English only ("en")
 locales/locales.js         generated copy for file:// (command in js/i18n.js header)
 assets/
-  VO-EN/                   English voice-over: <clip>.mp3 + manifest.json/.js
+  VO-EN/                   English voice-over: <clip>.webm (Opus 32k) + <clip>.mp3 fallback + manifest.json/.js
                            (word timings) - cut from one recording by tools/split-vo.py
   images/                  RAW art (untouched source of truth)
   build/                   GENERATED game-ready WebP + manifest (do not edit)
@@ -351,7 +351,8 @@ key itself). After editing the JSON, regenerate `locales/locales.js` (command in
 the header of `js/i18n.js`) so the game still runs from `file://`.
 
 Read-aloud uses the same keys: `I18n.say(key, vars)` plays
-`assets/VO-<LANG>/<clip>.mp3` when the clip is listed in
+`assets/VO-<LANG>/<clip>.webm` (or the `.mp3` copy where the browser has no
+WebM Opus) when the clip is listed in
 `assets/VO-<LANG>/manifest.js`, otherwise the browser speaks the text.  A line
 with `{vars}` has one clip per value: `<key>_<tag>` (`guideCorrect_MinorSector`,
 `guideWall_3_6`).  Every caption-bar line (`story*`, `guide*`, `hint*`,

@@ -2,7 +2,10 @@
 """Build the voice-over clips from locales/locales.json with ElevenLabs.
 
 LOCAL BUILD TOOL ONLY - the game never calls ElevenLabs. Its output
-(assets/VO-<LANG>/*.mp3 + manifest.json) is committed and loads offline.
+(assets/VO-<LANG>/*.webm + *.mp3 + manifest.json) is committed and loads
+offline.  The game plays the WebM (Opus) clip and falls back to the MP3 where
+the browser has no Opus-in-WebM (js/i18n.js); the WebM is made from the MP3
+by ffmpeg (FFMPEG=..., on PATH, or the imageio-ffmpeg package).
 Project rule: only run this after the user has given the exact ElevenLabs
 confirmation for that request.
 
@@ -21,7 +24,7 @@ time of every word is stored in the manifest as [charOffset, seconds] against
 the line's plain text (the locale text without *...* marks), so the caption
 bar can reveal each word as it is spoken.
 """
-import argparse, base64, json, os, re, sys, time, urllib.request, urllib.error
+import argparse, base64, json, os, re, shutil, subprocess, sys, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LANG = 'en'
@@ -33,10 +36,35 @@ MODEL = 'eleven_multilingual_v2'
 SETTINGS = {'stability': 0.85, 'similarity_boost': 0.8, 'style': 0.0, 'use_speaker_boost': True, 'speed': 0.86}
 SEED = 4242
 FORMAT = 'mp3_44100_64'
+VO_OPUS = '32k'  # WebM/Opus bitrate of the clips the game plays (mono speech)
 
 PIECES = ['MinorArc', 'MajorArc', 'MinorSector', 'MajorSector', 'MinorSegment', 'MajorSegment']
 # spoken outside the caption bar (screens, review card)
 EXTRA = ['mission1', 'endTitle', 'endSub', 'endNoMixups', 'goTitle', 'goSub']
+
+
+def ffmpeg_exe():
+    """An ffmpeg with libopus: $FFMPEG, then PATH, then the imageio-ffmpeg package."""
+    exe = os.environ.get('FFMPEG') or shutil.which('ffmpeg')
+    if not exe:
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            pass
+    if not exe:
+        raise SystemExit('needs ffmpeg (libopus) for the .webm clips: set FFMPEG, put it on PATH, '
+                         'or run with the imageio-ffmpeg package (uv run --with imageio-ffmpeg ...)')
+    return exe
+
+
+def write_webm(path, src=None, pcm=None, sr=None):
+    """The WebM/Opus clip at `path`, from an audio file `src` or mono float32 `pcm` at `sr` Hz."""
+    cmd = [ffmpeg_exe(), '-v', 'error', '-y']
+    cmd += ['-i', src] if src else ['-f', 'f32le', '-ar', str(sr), '-ac', '1', '-i', '-']
+    cmd += ['-ac', '1', '-c:a', 'libopus', '-b:a', VO_OPUS, '-application', 'audio', path]
+    data = None if src else pcm.astype('<f4').tobytes()
+    subprocess.run(cmd, input=data, check=True)
 
 
 def load_locale():
@@ -149,6 +177,7 @@ def main():
     key = os.environ.get('ELEVENLABS_API_KEY')
     if not key:
         raise SystemExit('set ELEVENLABS_API_KEY')
+    ffmpeg_exe()  # (before any API call)
     os.makedirs(a.out, exist_ok=True)
     man_path = os.path.join(a.out, 'manifest.json')
     man = json.load(open(man_path)) if os.path.exists(man_path) else {}
@@ -157,8 +186,10 @@ def main():
     for i, (cid, lkey, text) in enumerate(lines, 1):
         plain = spoken(text)
         res = tts(key, a.voice, plain)
-        with open(os.path.join(a.out, cid + '.mp3'), 'wb') as f:
+        mp3 = os.path.join(a.out, cid + '.mp3')
+        with open(mp3, 'wb') as f:
             f.write(base64.b64decode(res['audio_base64']))
+        write_webm(os.path.join(a.out, cid + '.webm'), src=mp3)
         al = res['alignment']
         clips[cid] = {
             'text': text.replace('*', ''),
@@ -170,7 +201,7 @@ def main():
     man = {
         '_comment': 'Built by tools/build-vo.py. clips: id -> {text, dur, words:[[charOffset, startSec]]}. '
                     'Ids not listed fall back to browser speech.',
-        'voice': a.voice, 'model': MODEL, 'format': FORMAT,
+        'voice': a.voice, 'model': MODEL, 'format': f'webm opus {VO_OPUS} (+ {FORMAT} fallback)',
         'clips': dict(sorted(clips.items())),
     }
     with open(man_path, 'w', encoding='utf-8') as f:
