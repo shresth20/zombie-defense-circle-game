@@ -1,10 +1,10 @@
 /* game-i18n: key-based text + voice-over.
    ------------------------------------------------------------------
    Text   : T('key', {vars})      HTML: <span data-i18n="key">
-   Voice  : I18n.say('key', vars) -> plays assets/VO-<LANG>/<clip>.webm (Opus;
-            <clip>.mp3 where the browser has no Opus in WebM) when the
-            clip is listed in assets/VO-<LANG>/manifest.js, otherwise speaks
-            T(key) with the browser speech engine (captions are always shown).
+   Voice  : I18n.say('key', vars) -> plays assets/VO-<LANG>/<clip>.webm (Opus)
+            when the clip is listed in assets/VO-<LANG>/manifest.js and the
+            browser plays WebM Opus, otherwise speaks T(key) with the browser
+            speech engine (captions are always shown).
             A line with {vars} has one clip per value: <key>_<tag>[_<tag>]
             (numbers as-is, a piece name as its id: guideCorrect_MinorSector).
             I18n.timing() gives each word's start time in the clip, so the
@@ -22,9 +22,9 @@
   let lang = 'en';
   /* false = no read-aloud at all (no clips, no browser speech). */
   const VOICE_ON = true;
-  /* the clips' file type: WebM (Opus) is half the size; the MP3 copy is the
-     fallback (same test as the theme music in js/core/audio.js) */
-  const VO_EXT = new Audio().canPlayType('audio/webm; codecs="opus"') ? 'webm' : 'mp3';
+  /* the clips are WebM (Opus) only; a browser that cannot play them reads
+     every line with browser speech instead (no clip is fetched) */
+  const CAN_PLAY_CLIPS = !!new Audio().canPlayType('audio/webm; codecs="opus"');
   let voiceClips = {}; // clip id -> { text, dur, words: [[charOffset, startSec]] }
   const clipBlobs = {}; // clip id -> blob: URL (downloaded by the preloader)
   let currentClip = null;
@@ -116,7 +116,7 @@
     },
     /* Preloader hooks: resolves the clip files once the manifest is in. */
     voiceFiles() {
-      return voiceReady.then(() => Object.keys(voiceClips).map((id) => ({ id, src: clipFile(id) })));
+      return voiceReady.then(() => (CAN_PLAY_CLIPS ? Object.keys(voiceClips) : []).map((id) => ({ id, src: clipFile(id) })));
     },
     useClipBlob(id, blob) {
       if (blob && !clipBlobs[id]) clipBlobs[id] = URL.createObjectURL(blob);
@@ -154,7 +154,7 @@
   };
 
   function clipFile(id) {
-    return `assets/VO-${lang.toUpperCase()}/${id}.${VO_EXT}`;
+    return `assets/VO-${lang.toUpperCase()}/${id}.webm`;
   }
 
   /* The clip of the line (or browser speech when there is none). */
@@ -167,7 +167,7 @@
     };
     // (a clip recorded for older wording is not played under the new caption)
     const c = voiceClips[id];
-    if (!c || c.text !== I18n.t(key, vars).replace(/\*/g, '')) return speak();
+    if (!CAN_PLAY_CLIPS || !c || c.text !== I18n.t(key, vars).replace(/\*/g, '')) return speak();
     const a = new Audio(I18n.voice(id));
     currentClip = a;
     return new Promise((res) => {

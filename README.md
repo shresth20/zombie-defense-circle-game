@@ -159,7 +159,7 @@ js/
   core/util.js             DOM helpers, pausable clock, prefs
   core/perf.js             ?perf diagnostics panel + ?perf=stress transition test
   core/audio.js            procedural SFX (WebAudio) + read-aloud fallback
-                           + theme music (assets/audio/theme-song.webm, .mp3 fallback)
+                           + theme music (assets/audio/theme-song.webm)
                            (speech); silent while page is inactive
   core/assets.js           manifest access, preloader (everything before Play,
                            stall-proof), decode-before-paint
@@ -185,7 +185,7 @@ js/
 locales/locales.json       learner-facing strings — English only ("en")
 locales/locales.js         generated copy for file:// (command in js/i18n.js header)
 assets/
-  VO-EN/                   English voice-over: <clip>.webm (Opus 32k) + <clip>.mp3 fallback + manifest.json/.js
+  VO-EN/                   English voice-over: <clip>.webm (Opus 32k) + manifest.json/.js
                            (word timings) - cut from one recording by tools/split-vo.py
   images/                  RAW art (untouched source of truth)
   build/                   GENERATED game-ready WebP + manifest (do not edit)
@@ -351,9 +351,9 @@ key itself). After editing the JSON, regenerate `locales/locales.js` (command in
 the header of `js/i18n.js`) so the game still runs from `file://`.
 
 Read-aloud uses the same keys: `I18n.say(key, vars)` plays
-`assets/VO-<LANG>/<clip>.webm` (or the `.mp3` copy where the browser has no
-WebM Opus) when the clip is listed in
-`assets/VO-<LANG>/manifest.js`, otherwise the browser speaks the text.  A line
+`assets/VO-<LANG>/<clip>.webm` when the clip is listed in
+`assets/VO-<LANG>/manifest.js` and the browser plays WebM Opus, otherwise the
+browser speaks the text.  A line
 with `{vars}` has one clip per value: `<key>_<tag>` (`guideCorrect_MinorSector`,
 `guideWall_3_6`).  Every caption-bar line (`story*`, `guide*`, `hint*`,
 `rule*`), the piece names and the end title are read aloud.  The clips are in
@@ -378,7 +378,7 @@ confirmation.
 
 All sound effects are synthesised in `js/core/audio.js` (`SFX` recipes); the
 only audio file is the looping theme (`assets/audio/theme-song.webm`, Opus
-64 kbps; browsers without WebM Opus get the `.mp3`). Toggle sound (M key / HUD button), read-aloud,
+64 kbps; a browser without WebM Opus plays the game without the theme). Toggle sound (M key / HUD button), read-aloud,
 the zombie timer and reduced motion from the pause menu (Esc / P). When the tab is hidden or the window
 loses focus, the AudioContext is suspended (`ZD.audio.setActive`, wired in
 `js/main.js`) — no ambient loop or effects play until the learner returns.

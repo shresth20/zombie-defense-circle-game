@@ -1,4 +1,4 @@
-/* Procedural sound effects + read-aloud + looping theme music (assets/audio/theme-song.webm, .mp3 fallback).
+/* Procedural sound effects + read-aloud + looping theme music (assets/audio/theme-song.webm).
    Every effect is synthesised with WebAudio, so the game needs no audio files
    and works offline.  say() is the read-aloud fallback used by I18n.say when
    no recorded clip exists (browser speech, in the current language). Replace any effect by editing the recipe in SFX below.
@@ -13,9 +13,10 @@ window.ZD = window.ZD || {};
   let ambientNodes = null;
   /* Background theme: a looping music file, routed through the master gain
      so mute / page-inactive silence it like every other sound.
-     Opus/WebM (64 kbps, ~1.3 MB); the MP3 is only fetched by browsers that
-     cannot play WebM Opus (older iOS Safari). */
-  const MUSIC_SRC = new Audio().canPlayType('audio/webm; codecs="opus"') ? 'assets/audio/theme-song.webm' : 'assets/audio/theme-song.mp3';
+     Opus/WebM (64 kbps, ~1.3 MB).  A browser that cannot play WebM Opus
+     (older iOS Safari) gets no theme: null here, so nothing is fetched and
+     music() does nothing; effects and read-aloud still work. */
+  const MUSIC_SRC = new Audio().canPlayType('audio/webm; codecs="opus"') ? 'assets/audio/theme-song.webm' : null;
   /* ZD.assets.preload downloads the file with the images and hands it over
      (useMusicBlob), so Play starts the music with no network wait.  If that
      failed, the element streams MUSIC_SRC as before. */
@@ -313,7 +314,7 @@ window.ZD = window.ZD || {};
 
   function music(on) {
     musicOn = on;
-    if (!ensure()) return;
+    if (!MUSIC_SRC || !ensure()) return;
     if (!musicEl) {
       musicEl = new Audio(musicUrl);
       musicEl.loop = true;

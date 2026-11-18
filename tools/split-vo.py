@@ -3,7 +3,7 @@
 
 LOCAL BUILD TOOL ONLY - nothing here uses the network (no ElevenLabs, no
 downloads): Whisper runs on this machine from its cached model.  The output
-(assets/VO-<LANG>/*.webm + *.mp3 + manifest.json/.js) is committed and loads
+(assets/VO-<LANG>/*.webm + manifest.json/.js) is committed and loads
 offline.
 
 A recording is a list of sentences read once, in order, with a pause between
@@ -37,8 +37,7 @@ How it works:
   4. Each game line gets the recorded line with the same words (case and
      punctuation aside), or the part of one before/after a pause ('Time up!'
      from 'Time up. It was a minor arc.').  Clips: mono WebM/Opus 32 kbps
-     (what the game plays) + mono MP3 (VBR ~80 kbps, the fallback where the
-     browser has no Opus), 5 ms fades.  The manifest keeps each word's start as [charOffset, sec]
+     only (a browser without Opus reads the line with speech), 5 ms fades.  The manifest keeps each word's start as [charOffset, sec]
      against the caption text (no *marks*), as js/i18n.js and js/ui.js read.
 """
 import argparse, glob, importlib.util, itertools, json, math, os, re, subprocess, tempfile
@@ -458,6 +457,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     if not a.add:
         have = {}
+        # (.mp3 clips from builds before WebM-only are cleared too)
         for f in glob.glob(os.path.join(out, '*.mp3')) + glob.glob(os.path.join(out, '*.webm')):
             os.remove(f)
     used, made = set(), []
@@ -469,8 +469,6 @@ def main():
         t, i, j = src
         used.add(t['text'])
         y, st, en = cut(t, i, j, sr)
-        sf.write(os.path.join(out, cid + '.mp3'), y, sr, format='MP3', subtype='MPEG_LAYER_III',
-                 compression_level=0.5, bitrate_mode='VARIABLE')
         bvo.write_webm(os.path.join(out, cid + '.webm'), pcm=y, sr=sr)
         words, k = [], 0
         for off, sp in toks:
@@ -499,7 +497,7 @@ def main():
         'voice': (a.voice or old.get('voice')) if a.add else (a.voice or voice_name(a.raw)),
         'sources': (old.get('sources', []) if a.add else []) + [
             {'file': os.path.basename(a.raw), 'script': a.script or 'current'}],
-        'format': f'webm opus mono {bvo.VO_OPUS} (+ mp3 mono {sr} Hz VBR fallback)',
+        'format': f'webm opus mono {bvo.VO_OPUS}',
         'clips': dict(sorted(have.items())),
     }
     write_manifest(out, man, bvo)

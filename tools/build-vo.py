@@ -2,10 +2,11 @@
 """Build the voice-over clips from locales/locales.json with ElevenLabs.
 
 LOCAL BUILD TOOL ONLY - the game never calls ElevenLabs. Its output
-(assets/VO-<LANG>/*.webm + *.mp3 + manifest.json) is committed and loads
-offline.  The game plays the WebM (Opus) clip and falls back to the MP3 where
-the browser has no Opus-in-WebM (js/i18n.js); the WebM is made from the MP3
-by ffmpeg (FFMPEG=..., on PATH, or the imageio-ffmpeg package).
+(assets/VO-<LANG>/*.webm + manifest.json) is committed and loads offline.
+ElevenLabs returns MP3; each one goes to a temp folder, is turned into the
+WebM (Opus) clip the game plays by ffmpeg (FFMPEG=..., on PATH, or the
+imageio-ffmpeg package) and is deleted.  A browser without WebM Opus reads the
+line with browser speech (js/i18n.js).
 Project rule: only run this after the user has given the exact ElevenLabs
 confirmation for that request.
 
@@ -24,7 +25,7 @@ time of every word is stored in the manifest as [charOffset, seconds] against
 the line's plain text (the locale text without *...* marks), so the caption
 bar can reveal each word as it is spoken.
 """
-import argparse, base64, json, os, re, shutil, subprocess, sys, time, urllib.request, urllib.error
+import argparse, base64, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LANG = 'en'
@@ -186,10 +187,11 @@ def main():
     for i, (cid, lkey, text) in enumerate(lines, 1):
         plain = spoken(text)
         res = tts(key, a.voice, plain)
-        mp3 = os.path.join(a.out, cid + '.mp3')
-        with open(mp3, 'wb') as f:
-            f.write(base64.b64decode(res['audio_base64']))
-        write_webm(os.path.join(a.out, cid + '.webm'), src=mp3)
+        with tempfile.TemporaryDirectory() as tmp:  # the API's MP3 never lands in the game folder
+            mp3 = os.path.join(tmp, cid + '.mp3')
+            with open(mp3, 'wb') as f:
+                f.write(base64.b64decode(res['audio_base64']))
+            write_webm(os.path.join(a.out, cid + '.webm'), src=mp3)
         al = res['alignment']
         clips[cid] = {
             'text': text.replace('*', ''),
@@ -201,7 +203,7 @@ def main():
     man = {
         '_comment': 'Built by tools/build-vo.py. clips: id -> {text, dur, words:[[charOffset, startSec]]}. '
                     'Ids not listed fall back to browser speech.',
-        'voice': a.voice, 'model': MODEL, 'format': f'webm opus {VO_OPUS} (+ {FORMAT} fallback)',
+        'voice': a.voice, 'model': MODEL, 'format': f'webm opus {VO_OPUS} (from {FORMAT})',
         'clips': dict(sorted(clips.items())),
     }
     with open(man_path, 'w', encoding='utf-8') as f:
