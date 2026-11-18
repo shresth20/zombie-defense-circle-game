@@ -65,7 +65,7 @@ def var_values(var, n_walls, key=''):
 def script(loc):
     """[(clip id, locale key, caption text with *marks*)]"""
     n_walls = wall_count()
-    keys = [k for k in loc if k.startswith(('story', 'guide'))]
+    keys = [k for k in loc if k.startswith(('story', 'guide', 'hint'))]
     keys += ['piece' + p for p in PIECES] + ['rule' + p for p in PIECES] + EXTRA
     out = []
     for key in keys:

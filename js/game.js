@@ -7,9 +7,10 @@
        the controller: hold RUN, tap JUMP through the circle, run on to the
        next wall (runAndJump)
      wrong / time out: the zombie breaks the glass and attacks, the boy
-       falls in fright - no fight back - GAME OVER, then a review of the
-       miss and the wall again.  Two chances per wall: after the second
-       miss the game answers the next go itself (assistTap).
+       falls in fright - no fight back - GAME OVER, then a hint (text only,
+       never the answer) and the wall again.  Three tries per wall: after
+       the third miss the answer is shown (the review card) and the game
+       answers the next go itself (assistTap).
    Correctness comes from ZD.geo.matches on the configured data. */
 window.ZD = window.ZD || {};
 
@@ -49,10 +50,11 @@ window.ZD = window.ZD || {};
     lose: ['zombie.side.run', 'zombie.side.leap', 'zombie.side.attack', 'hero.sideFear', 'hero.sideFall'],
     arrive: ['zombie.side.walk', 'zombie.side.run', 'zombie.side.idle'],
   };
-  /* Each wall gives this many chances.  A miss (wrong tap or time-out)
-     shows GAME OVER and the review, then the wall again; after the last
-     chance the game answers the next go itself (wall.assist). */
-  const CHANCES = 2;
+  /* Each wall gives this many tries.  A miss (wrong tap or time-out)
+     shows GAME OVER and a hint that never names the answer (ui.hintCard),
+     then the wall again.  After the last try's miss the answer is shown
+     (ui.reviewCard) and the game answers the next go itself (wall.assist). */
+  const CHANCES = 3;
   const DEFEAT_FOCUS = { x: 960, y: 960 };
   const DEFEAT_SHIFT = { x: 260, y: 90 };
 
@@ -88,6 +90,18 @@ window.ZD = window.ZD || {};
       delay: r.delay || 0,
       openings: mission.openings[r.tier].filter((o) => geo.idOf(o) === order[i]),
     }));
+  }
+
+  /* The hint after a miss (two locale keys): what the picked part needs,
+     then what to check in the gap - about the part the learner got wrong
+     (its type first, else its size), never naming the answer.  A time-out
+     gets how to look at a gap. */
+  function hintKeys(chosenId, target) {
+    if (!chosenId) return ['hintTime', 'hintTimeAsk'];
+    const [size, type] = chosenId.split('-');
+    const cap = (w) => w[0].toUpperCase() + w.slice(1);
+    if (type !== target.type) return ['hint' + cap(type), 'hint' + cap(type) + 'Ask'];
+    return ['hint' + cap(size), 'hintSizeAsk'];
   }
 
   /* The piece the learner fired, drawn pointing the same way as the
@@ -252,10 +266,10 @@ window.ZD = window.ZD || {};
         const result = await this.playWall(wall, E);
         this.guard(E);
         if (result === 'gameover') {
-          // the boy is down: GAME OVER, the review of the miss, then the same
-          // wall again with a fresh zombie and a new opening of its piece.
-          // Two chances; after the second miss the next go is answered by
-          // the game itself (wall.assist), so the learner sees it done.
+          // the boy is down: GAME OVER, a hint (or, after the last try, the
+          // answer), then the same wall again with a fresh zombie and a new
+          // opening of its piece.  After the last try's miss the next go is
+          // answered by the game itself (wall.assist), so the learner sees it done.
           wall.misses = (wall.misses || 0) + 1;
           await this.gameOver(E, wall);
           this.guard(E);
@@ -361,7 +375,7 @@ window.ZD = window.ZD || {};
         first = false;
         this.guard(E);
 
-        // third go after two misses: no timer, the game shows the answer
+        // the go after the last try's miss: no timer, the game shows the answer
         const assist = !!wall.assist;
         const timed = !!wall.timer && !assist;
         // step by step: where to look (first wall / retry), then what to do
@@ -424,20 +438,20 @@ window.ZD = window.ZD || {};
           }
           continue;
         }
-        // (kept for the review on the game-over screen)
+        // (kept for the hint / review on the game-over screen)
         wall.lastMiss = { target, chosen };
 
-        // wrong tap or time out
+        // wrong tap or time out: the right answer is never shown here (the
+        // game-over screen gives a hint; only after the last try the answer)
         if (chosen) {
           ZD.ui.markAnswer(chosen, 'wrong');
-          ZD.ui.markAnswer(target.id, 'reveal');
           await this.throwFront(wrongPiece(chosen, target), target, false, E);
         } else {
           await this.timeUpFront(E);
         }
         this.guard(E);
-        // what the gap really was, while the zombie breaks in (side view)
-        ZD.ui.guide(chosen ? 'guideWrong' : 'guideTimeUp', { vars: { name: T(geo.labelKey(target)) }, kind: 'bad', now: true });
+        // while the zombie breaks in (side view)
+        ZD.ui.guide(chosen ? 'guideWrong' : 'guideTimeUp', { kind: 'bad', now: true });
         await this.wrongSide(E);
         return 'gameover';
       }
@@ -454,7 +468,7 @@ window.ZD = window.ZD || {};
       });
     },
 
-    /* The third go at a wall after two misses: the demo hand (the intro's)
+    /* The go at a wall after the last try's miss: the demo hand (the intro's)
        glides to the right name and taps it once the line saying what the
        gap is has been read; the tap goes through the open ask like a real
        one.  The buttons ignore the learner's taps meanwhile (#stage.demo). */
@@ -489,7 +503,7 @@ window.ZD = window.ZD || {};
 
     /* Teacher data: which piece was confused with which (kept on this device;
        ZD.report() prints a summary in the console).  An answer the game
-       gave itself (third go, `assisted`) is logged as chosen 'auto'. */
+       gave itself (after the last try, `assisted`) is logged as chosen 'auto'. */
     record(wall, target, chosen, ms, assisted = false) {
       const entry = { t: Date.now(), mission: this.mission.id, wall: wall.id, target: target.id, sweep: Math.round(target.sweep), chosen: assisted ? 'auto' : chosen || 'timeout', correct: !assisted && !!chosen && chosen === target.id, ms: Math.round(ms) };
       if (assisted) entry.assisted = true;
@@ -1153,13 +1167,13 @@ window.ZD = window.ZD || {};
        The boy is down and the zombie keeps clawing at him.  The camera
        pushes in on the two of them (defeatCam), the view dims to dusk
        purple, a soft burst of red rays opens and the GAME OVER sign drops
-       in over them.  After a beat the sign makes way for the review of the
-       miss ("Look again": the gap vs. the piece picked, and why, as an
-       animation on the two circles - ZD.ui.reviewCard); its Try again
-       button (every miss, the last chance too) comes up when the animation
-       ends, zooms back out and playMission plays the wall again.  After a
-       time-out there is no review: the sign stays up and the same button
-       comes up under it. */
+       in over them.  After a beat the sign makes way for a card:
+         - tries left: the hint (ZD.ui.hintCard) - a short explanation in
+           words, no figure, that never names the answer (LXD);
+         - the last try missed: the answer ("Look again" - ZD.ui.reviewCard:
+           the gap vs. the piece picked, and why, on the two circles).
+       Its Try again button comes up once the card has been read, the
+       camera zooms back out and playMission plays the wall again. */
     async gameOver(E, wall) {
       ZD.ui.showHud(false);
       const ov = document.getElementById('gameover');
@@ -1175,8 +1189,7 @@ window.ZD = window.ZD || {};
       this.defeatCam();
       M.enter(shade, null, { ms: D(700), delayMs: D(450) });
       M.enter(rays, { scale: 0.35 }, { ms: D(800), delayMs: D(850) });
-      // 2. the sign drops in and lands with a thump (the bar, which said
-      //    what the gap was, makes way for it)
+      // 2. the sign drops in and lands with a thump (the bar makes way for it)
       await wait(D(950));
       this.guard(E);
       ZD.ui.hideBanner();
@@ -1189,57 +1202,36 @@ window.ZD = window.ZD || {};
       // behind the game-over screen the wall is already set for the retry
       this.prepareRetry(wall);
       const miss = wall.lastMiss || {};
-      // (the retry button after every miss - after the last chance too,
-      // though the game then answers the next go itself: wall.assist)
-      const label = T('btnTryAgain');
-      let box; // what goes when its button is tapped
-      if (!miss.chosen) {
-        // time ran out: no review - the sign stays up and the replay
-        // button comes up under it
-        await wait(D(600));
-        this.guard(E);
-        const btn = ZD.ui.replayButton(label);
-        box = el('div', { class: 'go-replay' }, [btn]);
-        ov.appendChild(box);
-        ZD.audio.play('pop');
-        await M.pop(btn, { y: 18, scale: 0.85 });
-        M.clear(btn); // (inline transform would block :hover / :active)
-        this.guard(E);
-        btn.focus({ preventScroll: true });
-        await this.awaitInput(new Promise((res) => btn.addEventListener('click', res, { once: true })), E);
-        this.guard(E);
-        ZD.audio.play('click');
-        I18n.stop();
-        M.exit(rays, null, { ms: D(300) });
-        M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
-      } else {
-        // 3. a beat on the sign, then it rises away with the rays for the review
-        await wait(D(1300));
-        this.guard(E);
-        ZD.audio.play('swoosh');
-        M.exit(rays, null, { ms: D(300) });
-        await M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
-        this.guard(E);
-        // 4. "Look again": the gap vs. the piece picked; the why is shown
-        //    as an animation on the two circles, then the button comes up
-        const card = ZD.ui.reviewCard({
-          target: miss.target,
-          chosen: miss.chosen,
-          thrown: wrongPiece(miss.chosen, miss.target),
-          button: label,
-        });
-        box = card.el;
-        ov.appendChild(card.el);
-        ZD.audio.play('pop');
-        await M.pop(card.el, { y: 60, scale: 0.92 }, { ms: D(420) });
-        this.guard(E);
-        await this.awaitInput(card.explain(), E);
-        this.guard(E);
-        card.button.focus({ preventScroll: true });
+      const last = wall.misses >= CHANCES;
 
-        await this.awaitInput(card.done, E);
-        this.guard(E);
-      }
+      // 3. a beat on the sign, then it rises away with the rays for the card
+      await wait(D(last ? 1300 : 900));
+      this.guard(E);
+      ZD.audio.play('swoosh');
+      M.exit(rays, null, { ms: D(300) });
+      await M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
+      this.guard(E);
+      // 4. the hint (tries left) or the answer (last try missed); the
+      //    button comes up once it has been read
+      const label = T('btnTryAgain');
+      const card = last
+        ? ZD.ui.reviewCard({
+            target: miss.target,
+            chosen: miss.chosen,
+            thrown: miss.chosen ? wrongPiece(miss.chosen, miss.target) : null,
+            button: label,
+          })
+        : ZD.ui.hintCard({ keys: hintKeys(miss.chosen, miss.target), button: label });
+      const box = card.el; // (what goes when its button is tapped)
+      ov.appendChild(box);
+      ZD.audio.play('pop');
+      await M.pop(box, { y: 60, scale: 0.92 }, { ms: D(420) });
+      this.guard(E);
+      await this.awaitInput(card.explain(), E);
+      this.guard(E);
+      card.button.focus({ preventScroll: true });
+      await this.awaitInput(card.done, E);
+      this.guard(E);
       // leave: the card (or button) goes, the camera eases back out
       ZD.audio.play('swoosh');
       M.exit(box, { y: 40, scale: 0.95 }, { ms: D(240) });
@@ -1348,7 +1340,7 @@ window.ZD = window.ZD || {};
       const r = (rows[e.target] = rows[e.target] || { asked: 0, right: 0, timeouts: 0, shown: 0, mixedWith: {} });
       r.asked++;
       if (e.correct) r.right++;
-      else if (e.assisted) r.shown++; // answered by the game after two misses
+      else if (e.assisted) r.shown++; // answered by the game after the last try
       else if (e.chosen === 'timeout') r.timeouts++;
       else r.mixedWith[e.chosen] = (r.mixedWith[e.chosen] || 0) + 1;
     });

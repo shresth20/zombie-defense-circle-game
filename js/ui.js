@@ -103,6 +103,8 @@ window.ZD = window.ZD || {};
   }
 
   const CHECK_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path d="M7 12.4l3.3 3.3L17.2 8.8" fill="none" stroke="#2f9c45" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  /* the hint card's label icon: a light bulb */
+  const BULB_ICON = '<svg viewBox="0 0 24 24"><path d="M12 2.5a6.8 6.8 0 0 0-4 12.3c.6.5 1 1.2 1 2V18h6v-1.2c0-.8.4-1.5 1-2a6.8 6.8 0 0 0-4-12.3z" fill="#ffd23f" stroke="#7a4a00" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.5 20.5h5" stroke="#7a4a00" stroke-width="1.8" stroke-linecap="round"/></svg>';
   const CROSS_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path d="M8.2 8.2l7.6 7.6M15.8 8.2l-7.6 7.6" fill="none" stroke="#d61f44" stroke-width="2.8" stroke-linecap="round"/></svg>';
 
   const ui = {
@@ -600,8 +602,7 @@ window.ZD = window.ZD || {};
     },
 
     /* The game-over screen's replay button: the retry arrow + `label`
-       (Try again, after every miss).  The review ends on it, under the
-       card; after a time-out it comes up on its own under the sign. */
+       (Try again, after every miss), under the hint or review card. */
     replayButton(label) {
       return el('button', { class: 'btn primary review-btn' }, [
         el('span', { class: 'go-retry-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v5h-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
@@ -697,6 +698,82 @@ window.ZD = window.ZD || {};
         ZD.audio.play('click');
         I18n.stop();
         if (tl) tl.kill();
+        res();
+      }, { once: true }));
+      return { el: wrap, button: btn, explain, done };
+    },
+
+    /* The hint after a miss that still has tries left (LXD: never say the
+       answer then - a short explanation, no figure, then Try again).
+       keys: the hint's two lines (what the picked part needs, then what to
+       check in the gap), each read aloud as it rises in.  A text-only game
+       panel with a HINT label; the Try again button comes up below it once
+       both lines have been read.  A tap on the card skips the reading.
+       Returns { el, button, explain, done } like reviewCard. */
+    hintCard({ keys, button }) {
+      const lines = keys.map((key) => {
+        const p = el('p', { class: 'hint-line', style: { opacity: 0 } });
+        T(key).split(/(\*[^*]+\*)/).forEach((part) => {
+          if (!part) return;
+          const hl = part.length > 2 && part[0] === '*' && part[part.length - 1] === '*';
+          p.appendChild(hl ? el('b', { text: part.slice(1, -1) }) : document.createTextNode(part));
+        });
+        return { key, el: p };
+      });
+      const card = el('div', { class: 'review-card hint-card', role: 'dialog', 'aria-label': T('titleHint') }, [
+        el('div', { class: 'hint-label' }, [
+          el('span', { class: 'hint-ico', 'aria-hidden': 'true', html: BULB_ICON }),
+          el('span', { text: T('titleHint') }),
+        ]),
+        ...lines.map((l) => l.el),
+      ]);
+      const btn = ui.replayButton(button);
+      const row = el('div', { class: 'review-actions waiting' }, [btn]);
+      const wrap = el('div', { class: 'review hint' }, [card, row]);
+
+      let skipped = false;
+      let skip = () => {};
+      const explain = () => new Promise((res) => {
+        let shown = false;
+        const finish = () => {
+          if (shown) return;
+          shown = true;
+          card.removeEventListener('pointerdown', skip);
+          row.classList.remove('waiting');
+          ZD.audio.play('pop');
+          M.pop(btn, { y: 18, scale: 0.85 }).then(() => M.clear(btn)); // (inline transform would block :hover / :active)
+          res();
+        };
+        skip = () => {
+          skipped = true;
+          I18n.stop();
+          lines.forEach((l) => {
+            M.stop(l.el);
+            M.set(l.el, { opacity: 1, y: 0 });
+          });
+          finish();
+        };
+        card.addEventListener('pointerdown', skip);
+        // each line rises in (ease-out) as it starts to be read; the next
+        // waits until it has been read (or a reading time, without a voice)
+        (async () => {
+          await ZD.clock.wait(ZD.scene.D(250));
+          for (const l of lines) {
+            if (skipped) return;
+            M.enter(l.el, { y: 18 }, { duration: M.DUR.SLOW });
+            const read = ZD.scene.D(900 + T(l.key).split(/\s+/).length * 280);
+            // (a read-aloud that never reports its end holds a line only so long)
+            await Promise.all([ZD.clock.wait(read), Promise.race([I18n.say(l.key), ZD.clock.wait(read + 5000)])]);
+          }
+          if (!skipped) await ZD.clock.wait(ZD.scene.D(300));
+          finish();
+        })();
+      });
+      const done = new Promise((res) => btn.addEventListener('click', () => {
+        ZD.audio.play('click');
+        skipped = true;
+        I18n.stop();
+        M.stop(lines.map((l) => l.el));
         res();
       }, { once: true }));
       return { el: wrap, button: btn, explain, done };

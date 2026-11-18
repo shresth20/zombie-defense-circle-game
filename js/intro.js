@@ -498,8 +498,7 @@ window.ZD = window.ZD || {};
         await step(hand.tap());
         ui._pick(wrongId);
         ui.endAsk();
-        ui.markAnswer(wrongId, 'wrong');
-        ui.markAnswer(t2.id, 'reveal');
+        ui.markAnswer(wrongId, 'wrong'); // (a miss never shows the answer)
         hand.hide();
         ui.hideBanner();
         await step(G.throwFront(G.wrongPiece(wrongId, t2), t2, false, E));

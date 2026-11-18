@@ -89,37 +89,42 @@ third of his height.
   Up / W = jump.  (`game.runAndJump`, `js/controls.js`.)  (`hits` > 1 on a
   wall would add in-glass hits with new openings first; the shipped config
   uses 1.)
-* **Wrong piece** - the answer panel marks the right piece; the thrown piece
-  smashes the glass and the zombie dives through and attacks.  The boy is
-  too frightened to fight back: he recoils, staggers and falls flat on his
+* **Wrong piece** - the answer panel marks the pick red (the right piece is
+  never shown on a miss); the thrown piece smashes the glass and the zombie
+  dives through and attacks ("Oh no! Wrong part!").  The boy is too
+  frightened to fight back: he recoils, staggers and falls flat on his
   back where he stood (`hero.sideFall`, no knockback), and stays down while
   the zombie looms.  The camera pushes in on the two of them, the view dims
   to purple, red rays open and the GAME OVER sign (`gameOverSign`, from
   `circle-game-art/images/gameover.png`) drops in.  After a beat it rises
-  away and the **Look again** review comes up (`ZD.ui.reviewCard`): a light
-  card with circles drawn the way the lesson draws them (circle-skill-1:
-  lavender disc, orange rim, pink centre, navy points; minor regions pink,
-  major violet; minor arcs blue, major violet).  The part that fitted the
-  gap (left) and the piece that was thrown (right) are explained in turn
-  (`reviewCircle`, one GSAP timeline): the two points land, the straight
-  edges draw (two radii / a chord / none for an arc), the part fills in,
-  then its name comes up with a green tick or red cross and its rule line
-  (`rule*` keys) is shown and read aloud.  A tap skips to the end.  Only
-  then does the Try again button come up, below the card; it zooms back
-  out and plays the same wall again with a fresh zombie and a new opening
-  of the same piece (walls already cleared stay cleared).
+  away and the **hint** comes up (`ZD.ui.hintCard`, LXD round 3): a text-only
+  card - no figure, never the answer - with two short lines read aloud: what
+  the picked part needs, then what to check in the gap (`hint*` keys, picked
+  by `hintKeys` in `js/game.js`: a wrong type gets its type hint, e.g. "A
+  *sector* has two radii." / "Do the gap's edges meet at the centre?"; a
+  right type with the wrong size gets the size hint).  A tap skips the
+  reading.  Then the Try again button comes up, below the card; it zooms
+  back out and plays the same wall again with a fresh zombie and a new
+  opening of the same piece (walls already cleared stay cleared).
 * **Time out** - on timed walls the zombie climbs up behind the glass (the
   timer is its distance; the rim pulses red in the last 30%).  When it gets
-  there it bangs through: same as a wrong piece, but no review - the GAME
-  OVER sign stays up and only the replay button (*Try again*) comes up
-  under it.
-* **Two chances per wall** (`CHANCES` in `js/game.js`).  A time-out counts
-  as a miss.  Every game over's button is *Try again* (the retry arrow),
-  the second miss's too: on the third go the wall has no timer and the
-  game answers it itself -
-  "The gap is a ...", the intro's demo hand taps the right name
-  (`game.assistTap`), and the boy throws, knocks the zombie out and runs on
-  as usual.
+  there it bangs through: same as a wrong piece ("Time up!"), and the hint
+  says how to look at a gap ("First, look at the gap's edges." / "Then
+  check: more or less than half?").
+* **Three tries per wall** (`CHANCES` in `js/game.js`).  A time-out counts
+  as a miss.  Misses 1 and 2 get the hint.  After the third miss the answer
+  is shown: the **Look again** review card (`ZD.ui.reviewCard`) with
+  circles drawn the way the lesson draws them (circle-skill-1: lavender
+  disc, orange rim, pink centre, navy points; minor regions pink, major
+  violet; minor arcs blue, major violet).  The part that fitted the gap
+  (left) and the piece that was thrown (right, none after a time-out) are
+  explained in turn (`reviewCircle`, one GSAP timeline): the two points
+  land, the straight edges draw (two radii / a chord / none for an arc),
+  the part fills in, then its name comes up with a green tick or red cross
+  and its rule line (`rule*` keys) is shown and read aloud.  Its Try again
+  leads to a go with no timer that the game answers itself - "The gap is a
+  ...", the intro's demo hand taps the right name (`game.assistTap`), and
+  the boy throws, knocks the zombie out and runs on as usual.
 
 Timers and difficulty per wall come from `rounds` in the config: walls 1-2
 clear sizes, walls 3-4 rotated, walls 5-6 close to half.  Every wall has a
@@ -166,7 +171,7 @@ js/
                            seeded scenery (Scatter bands + biomes per wall:
                            grove / outpost / rocky / wild) so the land keeps
                            changing between walls instead of resetting
-  ui.js                    HUD, four-button answer panel, review card, panels, bottom message bar
+  ui.js                    HUD, four-button answer panel, hint + review cards, panels, bottom message bar
   controls.js              run-and-jump controller: RUN (hold) / JUMP (tap) buttons + keys
   intro.js                 title + 3-scene cinematic
   game.js                  state machine (wall loop, outcomes, finale)
