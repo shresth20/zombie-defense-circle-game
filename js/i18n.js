@@ -1,9 +1,15 @@
 /* game-i18n: key-based text + voice-over.
    ------------------------------------------------------------------
    Text   : T('key', {vars})      HTML: <span data-i18n="key">
-   Voice  : I18n.say('key', vars) -> plays assets/VO/<lang>/<key>.webm when the
-            clip is listed in assets/VO/<lang>/manifest.json, otherwise speaks
+   Voice  : I18n.say('key', vars) -> plays assets/VO-<LANG>/<clip>.mp3 when the
+            clip is listed in assets/VO-<LANG>/manifest.js, otherwise speaks
             T(key) with the browser speech engine (captions are always shown).
+            A line with {vars} has one clip per value: <key>_<tag>[_<tag>]
+            (numbers as-is, a piece name as its id: guideCorrect_MinorSector).
+            I18n.timing() gives each word's start time in the clip, so the
+            caption bar can show every word as it is spoken.
+            Clips are cut from one recording by tools/split-vo.py (local tool,
+            output committed; script order: tools/build-vo.py --list).
    Source : locales/locales.json  ("en" only until asked). ?lan=hi picks a
             language; missing keys fall back to English, then show the key.
    file:// cannot fetch JSON, so regenerate locales/locales.js after editing:
@@ -13,11 +19,14 @@
   const SPEECH_LANG = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN', te: 'te-IN', gu: 'gu-IN', or: 'or-IN' };
   let table = { en: {} };
   let lang = 'en';
-  /* Voice-over is switched off for now (new recordings coming). Set to true
-     to bring back clips + browser-speech fallback; nothing else needs changing. */
-  const VOICE_ON = false;
-  let voiceClips = new Set();
+  /* false = no read-aloud at all (no clips, no browser speech). */
+  const VOICE_ON = true;
+  let voiceClips = {}; // clip id -> { text, dur, words: [[charOffset, startSec]] }
+  const clipBlobs = {}; // clip id -> blob: URL (downloaded by the preloader)
   let currentClip = null;
+  let duckSeq = 0; // the theme music stays ducked until the latest line ends
+  let voiceReadyFn;
+  const voiceReady = new Promise((res) => (voiceReadyFn = res));
 
   function cap(s) {
     return s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -55,25 +64,58 @@
       });
       document.documentElement.lang = lang;
     },
-    voice(key) {
-      return `assets/VO/${lang}/${key}.webm`;
+    /* File of a clip id (the preloaded copy when there is one). */
+    voice(id) {
+      return clipBlobs[id] || `assets/VO-${lang.toUpperCase()}/${id}.mp3`;
+    },
+    /* The clip id of a line: key + one tag per {var} in the English text. */
+    clipId(key, vars) {
+      const tpl = table.en[key] || '';
+      const names = [...new Set((tpl.match(/\{\w+\}/g) || []).map((m) => m.slice(1, -1)))];
+      if (!names.length) return key;
+      return [key, ...names.map((n) => varTag(vars && vars[n]))].join('_');
+    },
+    /* Word start times for this line's clip: [[charOffset, seconds]] against
+       T(key, vars) without its *marks* - or null (no clip, voice off, or the
+       caption no longer matches the recording). */
+    timing(key, vars) {
+      const audio = window.ZD && ZD.audio;
+      if (!VOICE_ON || (audio && audio.muted)) return null;
+      const c = voiceClips[I18n.clipId(key, vars)];
+      if (!c || c.text !== I18n.t(key, vars).replace(/\*/g, '')) return null;
+      return c.words;
     },
     /* Plays the line; resolves when it has finished (or was cut off / could
-       not play).  Never rejects. */
-    say(key, vars) {
+       not play).  Never rejects.  onStart(true) fires when the clip starts
+       to sound; onStart(false) when there is no clip to sync to. */
+    say(key, vars, onStart) {
       const audio = window.ZD && ZD.audio;
-      if (!VOICE_ON || (audio && audio.muted)) return Promise.resolve();
-      I18n.stop();
-      if (voiceClips.has(key)) {
-        const a = new Audio(I18n.voice(key));
-        currentClip = a;
-        return new Promise((res) => {
-          a.addEventListener('ended', res, { once: true });
-          a.addEventListener('pause', res, { once: true });
-          a.play().catch(() => (audio ? audio.say(I18n.t(key, vars)) : Promise.resolve()).then(res));
-        });
+      let started = false;
+      const start = (synced) => {
+        if (started) return;
+        started = true;
+        if (onStart) onStart(synced);
+      };
+      if (!VOICE_ON || (audio && audio.muted)) {
+        start(false);
+        return Promise.resolve();
       }
-      return audio ? audio.say(I18n.t(key, vars)) : Promise.resolve();
+      I18n.stop();
+      const line = sayLine(key, vars, start);
+      // the theme music dips under the voice; an older line ending late
+      // (its 'pause' fires after this one starts) does not bring it back up
+      const seq = ++duckSeq;
+      if (audio && audio.duck) audio.duck(true);
+      return line.then(() => {
+        if (seq === duckSeq && audio && audio.duck) audio.duck(false);
+      });
+    },
+    /* Preloader hooks: resolves the clip files once the manifest is in. */
+    voiceFiles() {
+      return voiceReady.then(() => Object.keys(voiceClips).map((id) => ({ id, src: `assets/VO-${lang.toUpperCase()}/${id}.mp3` })));
+    },
+    useClipBlob(id, blob) {
+      if (blob && !clipBlobs[id]) clipBlobs[id] = URL.createObjectURL(blob);
     },
     stop() {
       if (currentClip) {
@@ -107,15 +149,65 @@
     },
   };
 
+  /* The clip of the line (or browser speech when there is none). */
+  function sayLine(key, vars, start) {
+    const audio = window.ZD && ZD.audio;
+    const id = I18n.clipId(key, vars);
+    const speak = () => {
+      start(false);
+      return audio ? audio.say(I18n.t(key, vars)) : Promise.resolve();
+    };
+    // (a clip recorded for older wording is not played under the new caption)
+    const c = voiceClips[id];
+    if (!c || c.text !== I18n.t(key, vars).replace(/\*/g, '')) return speak();
+    const a = new Audio(I18n.voice(id));
+    currentClip = a;
+    return new Promise((res) => {
+      const end = () => {
+        start(false); // (cut off before it sounded)
+        res();
+      };
+      a.addEventListener('playing', () => start(true), { once: true });
+      a.addEventListener('ended', end, { once: true });
+      a.addEventListener('pause', end, { once: true });
+      let failed = false; // (a bad file can both fire 'error' and reject play())
+      const fail = () => {
+        if (failed) return;
+        failed = true;
+        if (currentClip === a) speak().then(res);
+        else end();
+      };
+      a.addEventListener('error', fail, { once: true });
+      a.play().catch(fail);
+    });
+  }
+
+  /* Number -> '3'; a piece name -> its id ('MINOR SECTOR' -> 'MinorSector'). */
+  function varTag(v) {
+    if (v == null) return '';
+    const s = String(v);
+    for (const t of [table[lang] || {}, table.en]) {
+      const k = Object.keys(t).find((x) => x.startsWith('piece') && t[x] === s);
+      if (k) return k.slice(5);
+    }
+    return s;
+  }
+
+  /* manifest.js (a script, so it also loads from file://); no clips -> speech. */
   function loadVoiceManifest() {
-    voiceClips = new Set();
-    if (location.protocol === 'file:') return Promise.resolve(); // no clips without a server
-    return fetch(`assets/VO/${lang}/manifest.json`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((m) => {
-        if (m && Array.isArray(m.clips)) voiceClips = new Set(m.clips);
-      })
-      .catch(() => {});
+    voiceClips = {};
+    const take = () => {
+      const m = window.VO_MANIFEST && window.VO_MANIFEST[lang];
+      if (m && m.clips && !Array.isArray(m.clips)) voiceClips = m.clips;
+      voiceReadyFn();
+    };
+    if (!VOICE_ON) return Promise.resolve(take());
+    return new Promise((res) => {
+      const s = document.createElement('script');
+      s.src = `assets/VO-${lang.toUpperCase()}/manifest.js`;
+      s.onload = s.onerror = () => res(take());
+      document.head.appendChild(s);
+    });
   }
 
   window.I18n = I18n;

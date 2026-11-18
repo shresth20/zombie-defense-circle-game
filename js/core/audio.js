@@ -20,7 +20,12 @@ window.ZD = window.ZD || {};
      (useMusicBlob), so Play starts the music with no network wait.  If that
      failed, the element streams MUSIC_SRC as before. */
   let musicUrl = MUSIC_SRC;
-  const MUSIC_VOL = 0.35;
+  /* The theme sits under the voice-over: quieter than before overall, and
+     ducked further while a line is read (duck), so the VO is easy to follow. */
+  const MUSIC_VOL = 0.22;
+  const MUSIC_DUCK = 0.07; // while a voice line plays
+  let ducked = false;
+  let unduckTimer = 0;
   let musicEl = null;
   let musicBus = null;
   let musicOn = false;
@@ -321,12 +326,26 @@ window.ZD = window.ZD || {};
     if (on) {
       if (state.active) musicEl.play().catch(() => {});
       musicBus.gain.cancelScheduledValues(now());
-      musicBus.gain.setTargetAtTime(MUSIC_VOL, now(), 0.6);
+      musicBus.gain.setTargetAtTime(ducked ? MUSIC_DUCK : MUSIC_VOL, now(), 0.6);
     } else {
       musicBus.gain.setTargetAtTime(0.0001, now(), 0.3);
       const el = musicEl;
       setTimeout(() => !musicOn && el.pause(), 1500);
     }
+  }
+
+  /* Voice line on: the theme dips at once.  Off: it comes back up after a
+     short beat, so lines read back to back do not make it pump. */
+  function setDuck(on) {
+    ducked = on;
+    if (!musicBus || !musicOn) return;
+    musicBus.gain.cancelScheduledValues(now());
+    musicBus.gain.setTargetAtTime(on ? MUSIC_DUCK : MUSIC_VOL, now(), on ? 0.08 : 0.5);
+  }
+  function duck(on) {
+    clearTimeout(unduckTimer);
+    if (on) setDuck(true);
+    else unduckTimer = setTimeout(() => setDuck(false), 450);
   }
 
   const audio = {
@@ -393,6 +412,7 @@ window.ZD = window.ZD || {};
     },
     ambient,
     music,
+    duck,
   };
 
   ZD.audio = audio;

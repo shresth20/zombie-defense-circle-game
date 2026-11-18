@@ -70,6 +70,7 @@ window.ZD = window.ZD || {};
   /* The theme music counts as this many images on the loading bar (~1.3 MB
      against ~115 KB per image). */
   const MUSIC_UNITS = 10;
+  const VOICE_UNITS = 10; // all the voice-over clips together (~1.7 MB)
   const CAN_FETCH = !!(window.fetch && window.AbortController && window.URL && URL.createObjectURL) && location.protocol !== 'file:';
 
   const cache = new Map(); // src -> Promise<Image> (one download per file, ever)
@@ -346,7 +347,7 @@ window.ZD = window.ZD || {};
 
     /* Download everything the game will fetch, before the play button:
        every image (the game must also run offline once loaded), every
-       font face and the theme music.  The welcome screen's own pictures
+       font face, the theme music and the voice-over clips.  The welcome screen's own pictures
        go first.  Only the title art is decoded here (not all 91 images
        into ~232 MB of RGBA); main.js decodes the initial side view after
        the scene exists, and Camera.prewarm decodes each incoming view.
@@ -362,7 +363,8 @@ window.ZD = window.ZD || {};
       ];
       const files = [...new Set(list)];
       const music = CAN_FETCH && ZD.audio && ZD.audio.musicSrc;
-      const units = files.length + 1 + (music ? MUSIC_UNITS : 0);
+      const voice = CAN_FETCH && window.I18n && I18n.voiceFiles;
+      const units = files.length + 1 + (music ? MUSIC_UNITS : 0) + (voice ? VOICE_UNITS : 0);
       let done = 0; // finished units
       let partial = 0; // received fractions of files still downloading
       const parts = new Map(); // what each of those contributes to `partial`
@@ -388,6 +390,24 @@ window.ZD = window.ZD || {};
                 report();
               })
           : Promise.resolve();
+        // a clip that will not download plays from its file later (or is read by speech)
+        const voiceDone = voice
+          ? I18n.voiceFiles()
+              .then((clips) => {
+                let got = 0;
+                return pool(clips, LOAD_CONCURRENCY, (c) =>
+                  fetchBlob(c.src)
+                    .then((blob) => I18n.useClipBlob(c.id, blob))
+                    .catch((e) => console.warn('[assets] voice clip will stream:', e.message))
+                    .then(() => part('voice', (++got / clips.length) * VOICE_UNITS))
+                );
+              })
+              .then(() => {
+                part('voice', 0);
+                done += VOICE_UNITS;
+                report();
+              })
+          : Promise.resolve();
         const fontsDone = loadFonts().then(() => {
           done++;
           report();
@@ -401,7 +421,7 @@ window.ZD = window.ZD || {};
               report();
             })
         );
-        await Promise.all([musicDone, fontsDone]);
+        await Promise.all([musicDone, fontsDone, voiceDone]);
         // the welcome screen's art, so the swap to the play button is instant
         await Promise.all(first.map(decodeOne));
       } finally {

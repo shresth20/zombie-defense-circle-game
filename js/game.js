@@ -1141,7 +1141,9 @@ window.ZD = window.ZD || {};
       // end screen: just the title and Replay
       const p = ZD.ui.panel({ id: 'complete', title: T('endTitle'), buttons: [{ label: T('btnReplay'), cls: 'primary' }], cls: 'complete' });
       ZD.ui.showHud(false);
+      I18n.say('endTitle');
       await this.awaitInput(p.result, E);
+      I18n.stop();
       this.guard(E);
       this.resetAll();
       return 'play';

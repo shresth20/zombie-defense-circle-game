@@ -180,7 +180,8 @@ js/
 locales/locales.json       learner-facing strings — English only ("en")
 locales/locales.js         generated copy for file:// (command in js/i18n.js header)
 assets/
-  VO/en/manifest.json      keys that have a recorded clip at assets/VO/en/<key>.webm
+  VO-EN/                   English voice-over: <clip>.mp3 + manifest.json/.js
+                           (word timings) - cut from one recording by tools/split-vo.py
   images/                  RAW art (untouched source of truth)
   build/                   GENERATED game-ready WebP + manifest (do not edit)
   fonts/                   Lilita One, Nunito (OFL)
@@ -344,13 +345,28 @@ and open `index.html?lan=hi` (missing keys fall back to English, then show the
 key itself). After editing the JSON, regenerate `locales/locales.js` (command in
 the header of `js/i18n.js`) so the game still runs from `file://`.
 
-Read-aloud uses the same keys: `I18n.say(key)` plays `assets/VO/<lang>/<key>.webm`
-when the key is listed in `assets/VO/<lang>/manifest.json`, otherwise the
-browser speaks the text.  Spoken lines: the six piece names (`piece*`, on a
-hit) and the six rules (`rule*`, on the walk through the window).  The six
-`reason*` lines are no longer shown or spoken (the review card explains by
-animation) but are kept for a future narration.  To ship recorded
-voice-overs, record the 12 spoken keys and list them in the manifest.
+Read-aloud uses the same keys: `I18n.say(key, vars)` plays
+`assets/VO-<LANG>/<clip>.mp3` when the clip is listed in
+`assets/VO-<LANG>/manifest.js`, otherwise the browser speaks the text.  A line
+with `{vars}` has one clip per value: `<key>_<tag>` (`guideCorrect_MinorSector`,
+`guideWall_3_6`).  Every caption-bar line (`story*`, `guide*`, `hint*`,
+`rule*`), the piece names and the end title are read aloud.  The clips are in
+the ElevenLabs voice "Josh - Warm, Smooth and Steady", cut from one recording
+of the whole script, and all preloaded before Play.  The manifest holds each
+word's start time, and the caption bar brings each word up as it is spoken.  A
+clip only plays under the exact caption it was recorded for: a line with new
+wording (or no recording yet) is read by the browser's speech instead.
+
+To record: `python3 tools/build-vo.py --list` prints the whole script (one clip
+per line, in order); `python3 tools/split-vo.py --missing` prints only the
+lines that have no clip yet.  Read them as one file with a pause between lines,
+then cut it with `tools/split-vo.py RAW.mp3` (full command in its header; add
+`--add --script lines.txt` for a pick-up of a few lines).  The tool runs
+Whisper on this machine (cached model, no network) to find each line and its
+word times, checks that every cut holds its line and nothing else, and writes
+`assets/VO-EN/`.  `tools/build-vo.py` can also make clips through the
+ElevenLabs API.  Project rule: only run it with the user's exact ElevenLabs
+confirmation.
 
 ## Audio
 

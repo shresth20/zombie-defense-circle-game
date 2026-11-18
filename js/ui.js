@@ -129,6 +129,7 @@ window.ZD = window.ZD || {};
 
       this.muteBtn = el('button', { class: 'icon-btn', 'aria-label': T('hudMute'), onClick: () => {
         ZD.audio.setMuted(!ZD.audio.muted);
+        if (ZD.audio.muted) I18n.stop(); // (a voice clip is not on the effects bus)
         this._syncMute();
         ZD.audio.play('click');
       } });
@@ -416,9 +417,13 @@ window.ZD = window.ZD || {};
       const id = ++this._lineId;
       this._busy = true;
       const text = T(entry.key, entry.vars);
-      this._showLine(text, entry.kind);
+      // with a recorded clip the words wait and come up as they are spoken
+      const timing = entry.speak ? I18n.timing(entry.key, entry.vars) : null;
+      const shown = this._showLine(text, entry.kind, !!timing);
       const read = this._readMs(text);
-      const spoken = entry.speak ? I18n.say(entry.key, entry.vars) : Promise.resolve();
+      const reveal = (synced) => timing && this._revealWords(shown, synced ? timing : null);
+      const spoken = entry.speak ? I18n.say(entry.key, entry.vars, reveal) : Promise.resolve();
+      if (timing) spoken.then(() => reveal(false)); // (never left hidden)
       // (a read-aloud that never reports its end can hold a line only so long)
       Promise.all([ZD.clock.wait(read), Promise.race([spoken, ZD.clock.wait(read + 5000)])]).then(() => {
         entry.resolve(true);
@@ -448,13 +453,17 @@ window.ZD = window.ZD || {};
     _lineNode(text, kind) {
       const line = el('div', { class: 'msgbar-line ' + kind });
       const words = [];
+      let off = 0; // where each word starts in the plain text (no *marks*): the clip timings use it
       text.split(/(\*[^*]+\*)/).forEach((part) => {
         if (!part) return;
         const hl = part.length > 2 && part[0] === '*' && part[part.length - 1] === '*';
         (hl ? part.slice(1, -1) : part).split(/(\s+)/).forEach((w) => {
           if (!w) return;
+          const at = off;
+          off += w.length;
           if (/^\s+$/.test(w)) return line.appendChild(document.createTextNode(' '));
           const span = el('span', { class: 'w' + (hl ? ' hl' : ''), text: w });
+          span._off = at;
           // hidden from the very first frame (no flash before the tween starts)
           span.style.opacity = '0';
           span.style.transform = 'translateY(18px)'; // (= the tween's start: _showLine)
@@ -464,7 +473,8 @@ window.ZD = window.ZD || {};
       });
       return { line, words };
     },
-    _showLine(text, kind) {
+    /* held: the words stay hidden until _revealWords (voice-synced). */
+    _showLine(text, kind, held = false) {
       const b = this.bannerEl;
       const box = this.barText;
       const { line, words } = this._lineNode(text, kind);
@@ -491,9 +501,30 @@ window.ZD = window.ZD || {};
         M.enter(b, { y: 60 });
         delay = M.DUR.NORMAL / 2; // the words rise as the bar settles
       }
-      // the new sentence rises in word by word (ease-out), the whole line
-      // in about 0.6 s whatever its length
-      M.enter(words, { y: 18 }, { delay, stagger: Math.max(0.018, Math.min(0.045, 0.6 / words.length)) });
+      const shown = { line, words, delay, revealed: false };
+      if (!held) this._revealWords(shown, null);
+      return shown;
+    },
+    /* The words rise in (ease-out).  With timing ([[charOffset, sec]] from
+       the clip, called as it starts to sound) each word comes up just as it
+       is spoken; without it the line comes up word by word in about 0.6 s
+       whatever its length. */
+    _revealWords(shown, timing) {
+      if (shown.revealed || shown.line.classList.contains('leaving')) return;
+      shown.revealed = true;
+      const { words } = shown;
+      if (!timing) {
+        M.enter(words, { y: 18 }, { delay: shown.delay, stagger: Math.max(0.018, Math.min(0.045, 0.6 / words.length)) });
+        return;
+      }
+      // a word starts to rise a moment before it is heard, so it is up as it is said
+      const LEAD = 0.05;
+      const at = words.map((w) => {
+        let t = 0;
+        for (const [o, s] of timing) if (o <= w._off) t = s;
+        return Math.max(0, t - LEAD);
+      });
+      M.enter(words, { y: 18 }, { stagger: (i) => at[i] });
     },
     /* Slide the bar away (the line stays in it until it is shown again). */
     hideBanner() {
