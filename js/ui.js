@@ -711,14 +711,12 @@ window.ZD = window.ZD || {};
        both lines have been read.  A tap on the card skips the reading.
        Returns { el, button, explain, done } like reviewCard. */
     hintCard({ keys, button }) {
+      // each line is word spans (as in the bar), so the words can come up
+      // just as the voice says them; *...* = key word
       const lines = keys.map((key) => {
-        const p = el('p', { class: 'hint-line', style: { opacity: 0 } });
-        T(key).split(/(\*[^*]+\*)/).forEach((part) => {
-          if (!part) return;
-          const hl = part.length > 2 && part[0] === '*' && part[part.length - 1] === '*';
-          p.appendChild(hl ? el('b', { text: part.slice(1, -1) }) : document.createTextNode(part));
-        });
-        return { key, el: p };
+        const { line, words } = this._lineNode(T(key), 'hint');
+        line.className = 'hint-line';
+        return { key, el: line, words };
       });
       const card = el('div', { class: 'review-card hint-card', role: 'dialog', 'aria-label': T('titleHint') }, [
         el('div', { class: 'hint-label' }, [
@@ -748,22 +746,26 @@ window.ZD = window.ZD || {};
           skipped = true;
           I18n.stop();
           lines.forEach((l) => {
-            M.stop(l.el);
-            M.set(l.el, { opacity: 1, y: 0 });
+            M.stop(l.words);
+            M.set(l.words, { opacity: 1, y: 0 });
           });
           finish();
         };
         card.addEventListener('pointerdown', skip);
-        // each line rises in (ease-out) as it starts to be read; the next
-        // waits until it has been read (or a reading time, without a voice)
+        // each word rises in (ease-out) as it is spoken (word timings of the
+        // clip), or word by word without a clip; the next line waits until
+        // this one has been read (or a reading time, without a voice)
         (async () => {
           await ZD.clock.wait(ZD.scene.D(250));
           for (const l of lines) {
             if (skipped) return;
-            M.enter(l.el, { y: 18 }, { duration: M.DUR.SLOW });
+            const shown = { line: l.el, words: l.words, delay: 0, revealed: false };
+            const timing = I18n.timing(l.key);
             const read = ZD.scene.D(900 + T(l.key).split(/\s+/).length * 280);
+            const spoken = I18n.say(l.key, undefined, (synced) => !skipped && this._revealWords(shown, synced ? timing : null));
+            spoken.then(() => !skipped && this._revealWords(shown, null)); // (never left hidden)
             // (a read-aloud that never reports its end holds a line only so long)
-            await Promise.all([ZD.clock.wait(read), Promise.race([I18n.say(l.key), ZD.clock.wait(read + 5000)])]);
+            await Promise.all([ZD.clock.wait(read), Promise.race([spoken, ZD.clock.wait(read + 5000)])]);
           }
           if (!skipped) await ZD.clock.wait(ZD.scene.D(300));
           finish();
@@ -773,7 +775,7 @@ window.ZD = window.ZD || {};
         ZD.audio.play('click');
         skipped = true;
         I18n.stop();
-        M.stop(lines.map((l) => l.el));
+        M.stop(lines.flatMap((l) => l.words));
         res();
       }, { once: true }));
       return { el: wrap, button: btn, explain, done };

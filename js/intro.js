@@ -505,8 +505,7 @@ window.ZD = window.ZD || {};
         world.classList.add('alarm');
         // the zombie smashes the glass on its way through
         say('storyWrong2', { kind: 'alert', now: true });
-        say('storyGotYou', { kind: 'alert' });
-        line = say('storyRetry');
+        line = say('storyGotYou', { kind: 'alert' });
         await step(G.zombieBreakIn(E));
         await step(Promise.all([line, wait(D(600))]));
 

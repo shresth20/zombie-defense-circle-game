@@ -96,7 +96,6 @@
     "storyWrong1": "But pick the wrong part...",
     "storyWrong2": "...and the glass breaks!",
     "storyGotYou": "The zombie gets you!",
-    "storyRetry": "You get three tries per wall.",
     "storyGoal1": "Clear all {n} walls.",
     "storyGoal2": "Reach the *Safe Zone*. Good luck!",
     "guideWall": "Wall {n} of {total}.",

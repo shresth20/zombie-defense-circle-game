@@ -1076,7 +1076,8 @@ canvas.wash {
 .hint-ico svg { display: block; width: 50px; height: 50px; }
 .hint-line { margin: 0; font: 900 56px/1.35 var(--body); color: #fff; white-space: nowrap; }
 .hint-line + .hint-line { margin-top: 18px; color: #efe6ff; }
-.hint-line b { font-weight: 900; color: var(--yellow); }
+.hint-line .w { display: inline-block; }
+.hint-line .w.hl { color: var(--yellow); }
 
 /* intro (js/intro.js): route map, demo hand, skip curtain */
 .mission-map {
