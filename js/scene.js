@@ -56,6 +56,15 @@ window.ZD = window.ZD || {};
   // skyline art runs solid to its bottom edge: pin source row 640 (the old
   // crop bottom) at screenY so the rooftops stay put and the base extends down
   const skylineTop = (screenY) => Math.round(screenY - (640 - (A.image('skyline').oy || 0)) * S_FAR);
+  /* The sky art starts 60 px above the stage.  A drift down (the game-over
+     camera moves the side view up to 90 px), a shake or a screen taller
+     than 16:9 showed the bare page above it: a band of another colour
+     along the top.  The art's top rows are one flat colour (.sky-cap in
+     the CSS), so a block of it carries the sky on upward - enough for a
+     4:3 screen plus the drift and a shake. */
+  const SKY_Y = -60;
+  const SKY_CAP = 300;
+  const skyCap = () => el('div', { class: 'sky-cap', 'aria-hidden': 'true', style: { left: WORLD_X + 'px', top: SKY_Y - SKY_CAP + 'px', width: WORLD_W + 'px', height: SKY_CAP + 1 + 'px' } });
 
   /* A few separate small clouds (cut out by the build) instead of a tiled
      cloud bank.  [key, x, baseline y, scale, flip] */
@@ -496,26 +505,53 @@ window.ZD = window.ZD || {};
   /* ----------------------------------------------------------------------- */
   /* How the opening's svg parts are drawn: a cut-out REGION (sector,
      segment) or a thin LINE on the circle (arc - LXD: an arc is a line with
-     a soft glow, never a band).  Widths in glass px. */
+     a soft glow, never a band).  Widths in glass px.  Arc ends are cut
+     square ('butt' caps, every layer ending at the same angle), never
+     rounded - the thrown rod and the review diagrams match. */
   const GLASS_REGION = {
     cut: { fill: 'black', stroke: 'none' },
     openShadow: { fill: '#120a2a', stroke: 'none' },
-    edge: { 'stroke-width': 12, 'stroke-linecap': 'butt' },
     halo: { 'stroke-width': 22, 'stroke-linecap': 'butt' },
     outline: { 'stroke-width': 6, 'stroke-linecap': 'butt' },
-    filament: { 'stroke-width': 2, 'stroke-linecap': 'butt' },
     ping: { 'stroke-width': 5, 'stroke-linecap': 'butt' },
   };
-  const ARC_SLOT = 9; // the slot an arc piece slides into
+  const ARC_SLOT = 12; // the slot an arc piece slides into
   const GLASS_LINE = {
-    cut: { fill: 'none', stroke: 'black', 'stroke-width': ARC_SLOT, 'stroke-linecap': 'round' },
-    openShadow: { fill: 'none', stroke: '#120a2a', 'stroke-width': ARC_SLOT, 'stroke-linecap': 'round' },
-    edge: { 'stroke-width': ARC_SLOT + 6, 'stroke-linecap': 'round' },
-    halo: { 'stroke-width': 18, 'stroke-linecap': 'round' },
-    outline: { 'stroke-width': 5, 'stroke-linecap': 'round' },
-    filament: { 'stroke-width': 1.6, 'stroke-linecap': 'round' },
-    ping: { 'stroke-width': 5, 'stroke-linecap': 'round' },
+    cut: { fill: 'none', stroke: 'black', 'stroke-width': ARC_SLOT, 'stroke-linecap': 'butt' },
+    openShadow: { fill: 'none', stroke: '#120a2a', 'stroke-width': ARC_SLOT, 'stroke-linecap': 'butt' },
+    halo: { 'stroke-width': 22, 'stroke-linecap': 'butt' },
+    outline: { 'stroke-width': 8, 'stroke-linecap': 'butt' },
+    ping: { 'stroke-width': 8, 'stroke-linecap': 'butt' },
   };
+
+  /* A crack pattern from (px,py), in units of the glass radius (so any
+     glass can draw it at its own size), kept inside radius `edge`: 11
+     jagged lines, each { pts, w (stroke px), twig (a short fine branch) }. */
+  function crackLines(px, py, edge) {
+    const n = 11;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + rand(-0.25, 0.25);
+      let x = px;
+      let y = py;
+      const pts = [[x, y]];
+      const segs = randInt(3, 5);
+      const len = rand(0.5, 1.1);
+      for (let s = 0; s < segs; s++) {
+        const a = ang + rand(-0.5, 0.5);
+        x += Math.cos(a) * (len / segs);
+        y += Math.sin(a) * (len / segs);
+        const d = Math.hypot(x, y);
+        if (d > edge) {
+          pts.push([x * (edge / d), y * (edge / d)]);
+          break;
+        }
+        pts.push([x, y]);
+      }
+      out.push({ pts, w: rand(2, 3.5), twig: Math.random() < 0.6 });
+    }
+    return out;
+  }
 
   class GlassMech {
     /**
@@ -570,29 +606,25 @@ window.ZD = window.ZD || {};
       this.gGlass.append(this.disc, this.shine, this.shine2, this.tint);
 
       // the opening: a light dark tint (the zombie behind must stay visible -
-      // it is the timer) + a dark edge under the rim lights, so even a thin
-      // arc reads clearly against the glass
+      // it is the timer).  Clean look (2026-11-18): no dark edge under the
+      // rim light and no white rim round the glass - the one yellow line is
+      // the only outline.
       this.openShadow = svg('path', { d: '', fill: '#120a2a', opacity: '0.3' });
-      this.edge = svg('path', { d: '', class: 'glass-edge', fill: 'none', stroke: '#1a0a2e', 'stroke-width': 12, 'stroke-linejoin': 'round', opacity: '0.85' });
       this.center = svg('circle', { r: 4.5, fill: '#ffe08a', stroke: '#5b2a86', 'stroke-width': 2, class: 'glass-center' });
       this.cracks = svg('g', { class: 'cracks', filter: `url(#${this.id}-glow)` });
-      this.rim = svg('circle', { r: R - 1, fill: 'none', stroke: '#ffffff', 'stroke-opacity': '0.25', 'stroke-width': 2 });
       this.lock = svg('circle', { r: R + 3, fill: 'none', stroke: '#7CFF8A', 'stroke-width': 5, opacity: '0', class: 'glass-lock' });
-      // an arc opening is a thin line on the circle: the rest of that circle
-      // is a faint outline, so the learner sees what fraction it covers
-      this.guide = svg('circle', { r: R * ZD.geo.ARC_R, fill: 'none', stroke: '#ffffff', 'stroke-opacity': '0.5', 'stroke-width': 3, class: 'glass-guide' });
       // (the shadow only covers the cut-out area, so it can sit above the glass)
-      this.gOpen = svg('g', { class: 'glass-open' }, [this.openShadow, this.edge]);
-      this.svg.append(defs, this.gGlass, this.guide, this.gOpen, this.center, this.cracks, this.rim, this.lock);
+      this.gOpen = svg('g', { class: 'glass-open' }, [this.openShadow]);
+      this.svg.append(defs, this.gGlass, this.gOpen, this.center, this.cracks, this.lock);
 
       // zombie timer: the rim pulses red in the last seconds
       this.dangerSvg = layer('glass glass-danger-layer', pad);
       this.danger = svg('circle', { r: R + 1, fill: 'none', stroke: '#ff3b5c', 'stroke-width': 8 });
       this.dangerSvg.append(this.danger);
 
-      /* Rim lights: a light-yellow neon tube.  A wide soft bloom (its own
-         svg, which breathes slowly - CSS opacity animation of the element),
-         the tube and a bright filament. */
+      /* Rim light: one solid light-yellow line (no blur, no white core)
+         over a wide soft bloom (its own svg, which breathes slowly - CSS
+         opacity animation of the element). */
       const LP = 40; // room for the bloom
       this.haloSvg = layer('glass glass-halo-layer', LP);
       const bloom = svg('filter', { id: this.id + '-bloom', x: '-40%', y: '-40%', width: '180%', height: '180%' });
@@ -600,9 +632,8 @@ window.ZD = window.ZD || {};
       this.halo = svg('path', { d: '', class: 'glass-halo', fill: 'none', stroke: '#ffe45a', 'stroke-width': 22, 'stroke-linejoin': 'round', filter: `url(#${this.id}-bloom)` });
       this.haloSvg.append(svg('defs', {}, [bloom]), this.halo);
       this.tubeSvg = layer('glass glass-tube-layer', LP);
-      this.outline = svg('path', { d: '', class: 'glass-outline', fill: 'none', stroke: '#fff07e', 'stroke-width': 6, 'stroke-linejoin': 'round', filter: `url(#${this.id}-glow2)` });
-      this.filament = svg('path', { d: '', class: 'glass-filament', fill: 'none', stroke: '#fffbe0', 'stroke-width': 2, 'stroke-linejoin': 'round' });
-      this.tubeSvg.append(svg('defs', {}, [glowFilter(this.id + '-glow2')]), this.outline, this.filament);
+      this.outline = svg('path', { d: '', class: 'glass-outline', fill: 'none', stroke: '#fff07e', 'stroke-width': 6, 'stroke-linejoin': 'round' });
+      this.tubeSvg.append(this.outline);
       this.lights = el('div', { class: 'glass-lights' }, [this.haloSvg, this.tubeSvg]);
 
       // an answer was picked: a copy of the opening pings outward
@@ -617,14 +648,14 @@ window.ZD = window.ZD || {};
     }
 
     get _openParts() {
-      return [this.lights, this.edge, this.openShadow];
+      return [this.lights, this.openShadow];
     }
 
     setTarget(spec) {
       this.spec = spec;
       const sh = spec ? ZD.geo.shape(spec, 0, 0, this.r) : null;
       const d = sh ? sh.d : '';
-      [this.cut, this.halo, this.outline, this.filament, this.edge, this.openShadow, this.ping].forEach((n) => n.setAttribute('d', d));
+      [this.cut, this.halo, this.outline, this.openShadow, this.ping].forEach((n) => n.setAttribute('d', d));
       this._lineMode(!!(sh && sh.line));
       this.highlight('idle');
       this._openParts.forEach((n) => (n.style.display = spec ? '' : 'none'));
@@ -635,7 +666,7 @@ window.ZD = window.ZD || {};
        regions outlined by the light (GLASS_REGION).  Same svg nodes, other
        fill / stroke widths. */
     _lineMode(on) {
-      this.guide.style.display = on ? '' : 'none';
+      this.lights.classList.toggle('arc', on); // the arc's own pick flare width (css)
       if (on === this._line) return;
       this._line = on;
       Object.entries(on ? GLASS_LINE : GLASS_REGION).forEach(([part, attrs]) => {
@@ -707,40 +738,29 @@ window.ZD = window.ZD || {};
       if (cls) this.lights.classList.add(cls);
     }
 
-    /* Red glowing cracks spreading from (px,py) in local glass coordinates. */
-    crack(px, py) {
+    /* Red glowing cracks spreading from (px,py) in local glass coordinates.
+       The other view's glass is the same window: `pattern` draws another
+       glass's cracks (its crackPattern) and `instant` shows them already
+       there, not spreading. */
+    crack(px, py, { pattern = null, instant = false } = {}) {
       this.cracks.innerHTML = '';
       const R = this.r;
-      const n = 11;
-      const lines = [];
-      for (let i = 0; i < n; i++) {
-        const ang = (i / n) * Math.PI * 2 + rand(-0.25, 0.25);
-        let x = px;
-        let y = py;
-        const pts = [`${x},${y}`];
-        const segs = randInt(3, 5);
-        const len = rand(R * 0.5, R * 1.1);
-        for (let s = 0; s < segs; s++) {
-          const a = ang + rand(-0.5, 0.5);
-          const l = len / segs;
-          x += Math.cos(a) * l;
-          y += Math.sin(a) * l;
-          if (Math.hypot(x, y) > R - 2) {
-            const k = (R - 2) / Math.hypot(x, y);
-            x *= k;
-            y *= k;
-            pts.push(`${x},${y}`);
-            break;
-          }
-          pts.push(`${x},${y}`);
-        }
-        const p = svg('polyline', { points: pts.join(' '), fill: 'none', stroke: '#ff3b5c', 'stroke-width': rand(2, 3.5), 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+      this.crackPattern = pattern || crackLines(px / R, py / R, 1 - 2 / R);
+      const at = (pts) => pts.map(([x, y]) => `${x * R},${y * R}`).join(' ');
+      const lines = this.crackPattern.map(({ pts, w, twig }) => {
+        const p = svg('polyline', { points: at(pts), fill: 'none', stroke: '#ff3b5c', 'stroke-width': w, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
         this.cracks.appendChild(p);
-        lines.push(p);
-        if (Math.random() < 0.6) {
-          const q = svg('polyline', { points: pts.slice(1, 3).join(' '), fill: 'none', stroke: '#ffd0d8', 'stroke-width': 1.2, 'stroke-linecap': 'round', opacity: '0.7' });
+        if (twig) {
+          const q = svg('polyline', { points: at(pts.slice(1, 3)), fill: 'none', stroke: '#ffd0d8', 'stroke-width': 1.2, 'stroke-linecap': 'round', opacity: '0.7' });
           this.cracks.appendChild(q);
         }
+        return p;
+      });
+      this.svg.classList.add('cracked');
+      M.stop(this.tint);
+      if (instant) {
+        M.set(this.tint, { opacity: 0.3 });
+        return;
       }
       lines.forEach((p) => {
         const L = p.getTotalLength();
@@ -749,13 +769,16 @@ window.ZD = window.ZD || {};
       });
       M.to(lines, { strokeDashoffset: 0, ms: D(420), ease: EASE.OUT, stagger: D(18) / 1000 });
       M.to(this.tint, { keyframes: { opacity: [0, 0.55, 0.3], easeEach: PHYS.DECEL }, ms: D(500) });
-      this.svg.classList.add('cracked');
+    }
+
+    get cracked() {
+      return this.svg.classList.contains('cracked');
     }
 
     /* Whole glass breaks away (breach / game over). */
     shatter() {
       this.svg.classList.add('shattered');
-      M.to([this.gGlass, this.guide, this.cracks, this.rim, this.center], { opacity: 0, ms: D(250), ease: PHYS.LINEAR });
+      M.to([this.gGlass, this.cracks, this.center], { opacity: 0, ms: D(250), ease: PHYS.LINEAR });
       this._openParts.forEach((n) => (n.style.display = 'none'));
       this.setDanger(false);
     }
@@ -767,14 +790,16 @@ window.ZD = window.ZD || {};
       this.cut.setAttribute('d', '');
       await M.fromTo(this.lock, { opacity: 0, scale: 1, transformOrigin: '50% 50%' }, { opacity: 1, scale: 1.08, ms: D(420), ease: EASE.OUT });
       M.to(this.lock, { opacity: 0, ms: D(500), ease: PHYS.LINEAR });
-      await M.to([this.gGlass, this.guide, this.rim, this.center], { opacity: 0, ms: D(500), ease: EASE.IN });
+      await M.to([this.gGlass, this.center], { opacity: 0, ms: D(500), ease: EASE.IN });
     }
 
     restore() {
       this.svg.classList.remove('cracked', 'shattered');
       this.el.classList.remove('danger');
       this.cracks.innerHTML = '';
-      [this.gGlass, this.guide, this.cracks, this.rim, this.center].forEach((n) => {
+      this.crackPattern = null;
+      M.stop(this.tint);
+      [this.gGlass, this.cracks, this.center].forEach((n) => {
         n.style.opacity = '';
         n.removeAttribute('opacity');
       });
@@ -795,7 +820,7 @@ window.ZD = window.ZD || {};
   /* ----------------------------------------------------------------------- */
   /* projectile                                                              */
   /* ----------------------------------------------------------------------- */
-  const ROD = 11; // thickness of a thrown arc (a thin rod; the slot is ARC_SLOT)
+  const ROD = 14; // thickness of a thrown arc (a thin rod; the slot is ARC_SLOT)
 
   class Projectile {
     constructor(r) {
@@ -809,15 +834,18 @@ window.ZD = window.ZD || {};
       const defs = svg('defs');
       const g = svg('linearGradient', { id: this.id + '-g', x1: '0', y1: '0', x2: '0', y2: '1' });
       g.append(svg('stop', { offset: '0%', 'stop-color': '#ffe8a3' }), svg('stop', { offset: '45%', 'stop-color': '#ffb347' }), svg('stop', { offset: '100%', 'stop-color': '#ff6f3c' }));
+      /* ONE clean border: the piece is its orange body with a single dark
+         edge.  The glow under it is blur only (no solid copy of the shape,
+         which showed as a second, lighter band) and there is no inner
+         sheen line (it read as a third border). */
       const glow = svg('filter', { id: this.id + '-glow', x: '-40%', y: '-40%', width: '180%', height: '180%' });
-      glow.append(svg('feGaussianBlur', { stdDeviation: '6', result: 'b' }), svg('feMerge', {}, [svg('feMergeNode', { in: 'b' }), svg('feMergeNode', { in: 'SourceGraphic' })]));
+      glow.append(svg('feGaussianBlur', { stdDeviation: '6' }));
       defs.append(g, glow);
       this.halo = svg('path', { d: '', fill: '#ffd166', opacity: '0.55', filter: `url(#${this.id}-glow)` });
       // an arc flies as a thin curved rod: a dark edge under the orange line
-      this.rodEdge = svg('path', { d: '', fill: 'none', stroke: '#7a2d12', 'stroke-width': ROD + 6, 'stroke-linecap': 'round', style: { display: 'none' } });
+      this.rodEdge = svg('path', { d: '', fill: 'none', stroke: '#7a2d12', 'stroke-width': ROD + 6, 'stroke-linecap': 'butt', style: { display: 'none' } });
       this.body = svg('path', { d: '', fill: `url(#${this.id}-g)`, stroke: '#7a2d12', 'stroke-width': 4, 'stroke-linejoin': 'round' });
-      this.sheen = svg('path', { d: '', fill: 'none', stroke: '#fff6d6', 'stroke-width': 2.5, 'stroke-linejoin': 'round', opacity: '0.7', transform: 'translate(-3,-3)' });
-      this.svg.append(defs, this.halo, this.rodEdge, this.body, this.sheen);
+      this.svg.append(defs, this.halo, this.rodEdge, this.body);
       this.el.append(this.trail, this.svg);
       this.x = 0;
       this.y = 0;
@@ -830,12 +858,12 @@ window.ZD = window.ZD || {};
     setSpec(spec, rot = 0) {
       this.spec = spec;
       const { d, line } = ZD.geo.shape(spec, 0, 0, this.r, rot);
-      [this.body, this.halo, this.sheen, this.rodEdge].forEach((n) => n.setAttribute('d', d));
+      [this.body, this.halo, this.rodEdge].forEach((n) => n.setAttribute('d', d));
       const grad = `url(#${this.id}-g)`;
       // a region: filled shape with a dark outline; an arc: the thin rod
       const look = line
-        ? { body: { fill: 'none', stroke: grad, 'stroke-width': ROD, 'stroke-linecap': 'round' }, halo: { fill: 'none', stroke: '#ffd166', 'stroke-width': ROD + 14, 'stroke-linecap': 'round' }, sheen: { 'stroke-width': 2, transform: 'translate(-1,-2)', 'stroke-linecap': 'round' } }
-        : { body: { fill: grad, stroke: '#7a2d12', 'stroke-width': 4, 'stroke-linecap': 'butt' }, halo: { fill: '#ffd166', stroke: 'none', 'stroke-width': 0, 'stroke-linecap': 'butt' }, sheen: { 'stroke-width': 2.5, transform: 'translate(-3,-3)', 'stroke-linecap': 'butt' } };
+        ? { body: { fill: 'none', stroke: grad, 'stroke-width': ROD, 'stroke-linecap': 'butt' }, halo: { fill: 'none', stroke: '#ffd166', 'stroke-width': ROD + 6, 'stroke-linecap': 'butt' } }
+        : { body: { fill: grad, stroke: '#7a2d12', 'stroke-width': 4, 'stroke-linecap': 'butt' }, halo: { fill: '#ffd166', stroke: 'none', 'stroke-width': 0, 'stroke-linecap': 'butt' } };
       Object.entries(look).forEach(([part, attrs]) => Object.entries(attrs).forEach(([k, v]) => this[part].setAttribute(k, v)));
       this.rodEdge.style.display = line ? '' : 'none';
     }
@@ -917,98 +945,41 @@ window.ZD = window.ZD || {};
   }
 
   /* ----------------------------------------------------------------------- */
-  /* crates (front view)                                                     */
+  /* the bag of pieces                                                       */
   /* ----------------------------------------------------------------------- */
-  /* Four closed crates on the road at the boy's feet, one per answer button,
-     with the same names in the same order (LXD change 4).  The pieces stay
-     hidden inside, so the names have to be read - a shape on show could be
-     matched to the gap by eye.  The tapped name's crate lights up, its lid
-     pops and the piece hops out into the boy's hands (FrontScene.pickUp).
-     Drawn in code (svg + an HTML name tag); positioned in the camera rig,
-     where the throw's pull-back to the wide shot brings them into view.
-     Motion: transform / opacity only. */
-  const CRATE = { w: 224, h: 118, gap: 18, left: 560, bottom: 1066 };
-  const CRATE_BOX =
-    '<svg class="crate-box" width="224" height="118" viewBox="0 0 200 118" preserveAspectRatio="none" aria-hidden="true">' +
-    '<path d="M14 2H186L198 26H2Z" fill="#2a1206" stroke="#3a1204" stroke-width="4" stroke-linejoin="round"/>' +
-    '<path d="M24 8H176L184 23H16Z" fill="#4a2410"/>' +
-    '<rect x="2" y="24" width="196" height="92" rx="8" fill="#c8793a" stroke="#3a1204" stroke-width="4"/>' +
-    '<path d="M6 55H194M6 86H194" stroke="#8a4a1c" stroke-width="3"/>' +
-    '<path d="M22 31H178" stroke="#eaa262" stroke-width="3" stroke-linecap="round" opacity="0.8"/>' +
-    '<rect x="2" y="24" width="20" height="92" rx="6" fill="#a85f27" stroke="#3a1204" stroke-width="4"/>' +
-    '<rect x="178" y="24" width="20" height="92" rx="6" fill="#a85f27" stroke="#3a1204" stroke-width="4"/>' +
-    '</svg>';
-  const CRATE_LID =
-    '<svg width="224" height="34" viewBox="0 0 200 34" preserveAspectRatio="none" aria-hidden="true">' +
-    '<path d="M14 5H186L198 30H2Z" fill="#d98c45" stroke="#3a1204" stroke-width="4" stroke-linejoin="round"/>' +
-    '<path d="M62 6L55 29M100 6V29M138 6L145 29" stroke="#8a4a1c" stroke-width="3"/>' +
-    '<path d="M20 10H180" stroke="#f2b070" stroke-width="3" stroke-linecap="round" opacity="0.8"/>' +
-    '</svg>';
-
-  class Crates {
-    constructor() {
-      this.el = el('div', { class: 'crates', style: { zIndex: 14, display: 'none' } });
-      this.items = [0, 1, 2, 3].map((i) => {
-        const x = CRATE.left + i * (CRATE.w + CRATE.gap);
-        const y = CRATE.bottom - CRATE.h;
-        const glow = el('div', { class: 'crate-glow' });
-        const lid = el('div', { class: 'crate-lid', html: CRATE_LID });
-        const label = el('span');
-        const tag = el('div', { class: 'crate-tag' }, [label]);
-        const node = el('div', { class: 'crate', style: { left: x + 'px', top: y + 'px' } }, [el('div', { class: 'crate-shadow' }), glow, el('div', { class: 'crate-inner', html: CRATE_BOX }), tag, lid]);
-        this.el.appendChild(node);
-        return { node, glow, lid, tag, label, cx: x + CRATE.w / 2, top: y, id: null };
-      });
+  /* One open backpack standing on the road by the boy - no label, the pieces
+     come out of it (the boy's bag art, tools/build-assets.py build_bag):
+       front view  the bag's back view (open top) at his right hand, there
+                   all through the wall; FrontScene.pickUp bounces it and
+                   lifts the tapped piece out of its mouth into his hands
+       side view   the bag's side view on the road just behind him while he
+                   stands at a wall to fight; it fades out as he runs off
+                   and in again at the next wall (SideScene.showBag) - it
+                   is never seen on the road without him
+     x = the middle of its base, y = the road under it, h = its height in
+     stage px.  Sized from the boy, never to fit: about a third of his
+     height, a small pack beside him.  Motion: transform / opacity only. */
+  class Bag {
+    constructor(key, { x, y, h, z, cls = '' }) {
+      const img = A.image(key);
+      const w = Math.round((img.w * h) / img.h);
+      this.art = el('div', { class: 'bag-art', style: { backgroundImage: `url("${A.imageUrl(key)}")` } });
+      this.el = el('div', { class: 'bag ' + cls, style: { left: Math.round(x - w / 2) + 'px', top: Math.round(y - h) + 'px', width: w + 'px', height: h + 'px', zIndex: z } }, [el('div', { class: 'bag-shadow' }), this.art]);
+      // where a piece comes out: the middle of the opening (from the art)
+      const m = img.mouth || { x: 0.5, y: 0.3 };
+      this.mouth = { x: Math.round(x - w / 2 + m.x * w), y: Math.round(y - h + m.y * h) };
     }
 
-    /* Four closed crates named as the answer buttons, top to bottom =
-       left to right (ids: ZD.ui.order). */
-    show(ids) {
-      this.el.style.display = '';
-      let fit = 1;
-      this.items.forEach((c, i) => {
-        const id = ids[i];
-        c.id = id || null;
-        c.node.style.display = id ? '' : 'none';
-        c.node.classList.remove('lit');
-        M.stop([c.glow, c.lid]);
-        M.clear([c.glow, c.lid]);
-        c.label.style.fontSize = '';
-        if (!id) return;
-        c.label.textContent = ZD.T(ZD.geo.labelKey(id));
-        const room = c.tag.clientWidth - 12;
-        if (room > 0 && c.label.scrollWidth > room) fit = Math.min(fit, room / c.label.scrollWidth);
-      });
-      // a name too long for its tag is set smaller, never wrapped - and the
-      // other three with it, so all four tags read alike
-      if (fit < 1) {
-        const size = Math.floor(parseFloat(getComputedStyle(this.items[0].label).fontSize) * fit);
-        this.items.forEach((c) => (c.label.style.fontSize = size + 'px'));
-      }
+    /* A piece is coming out: it squashes on its base and springs back. */
+    bounce() {
+      M.stop(this.art);
+      return M.fromTo(this.art, { scaleX: 1.08, scaleY: 0.86 }, { scaleX: 1, scaleY: 1, ms: D(420), ease: EASE.POP });
     }
 
-    get(id) {
-      return this.items.find((c) => c.id === id) || null;
-    }
-
-    /* The tapped name's crate lights up (with its button). */
-    light(id) {
-      const c = this.get(id);
-      if (!c) return;
-      c.node.classList.add('lit');
-      M.fromTo(c.glow, { opacity: 0 }, { opacity: 1, ms: D(220), ease: EASE.OUT });
-    }
-
-    /* The lid pops off: up, tipping back, fading. */
-    open(id) {
-      const c = this.get(id);
-      if (!c) return;
-      M.to(c.lid, { y: -54, rotation: -24, opacity: 0, ms: D(320), ease: EASE.OUT });
-    }
-
-    hide() {
-      this.items.forEach((c) => M.stop([c.glow, c.lid]));
-      this.el.style.display = 'none';
+    /* back at rest (a pick cut short) */
+    reset() {
+      M.stop(this.art);
+      M.clear(this.art);
     }
   }
 
@@ -1120,7 +1091,8 @@ window.ZD = window.ZD || {};
         this.el.appendChild(lay.node);
         return lay;
       };
-      L(tiledLayer('sky', { y: -60, z: 1, factor: 0 }));
+      L(tiledLayer('sky', { y: SKY_Y, z: 1, factor: 0 }));
+      this.el.appendChild(skyCap());
       this.clouds = cloudLayers([['cloud1', 120, 150, 0.6, false], ['cloud3', 760, 95, 0.55, true], ['cloud4', 1250, 230, 0.6, false], ['cloud2', 1650, 120, 0.5, true], ['cloud3', -260, 300, 0.5, false]], 0.02).map(L);
       // no sun in the front view (it competes with the window); the side view keeps its sun
       L(tiledLayer('skyline', { y: skylineTop(574), z: 3, factor: 0.05, cls: 'far', mirror: true, scale: S_FAR }));
@@ -1263,9 +1235,10 @@ window.ZD = window.ZD || {};
       // where a picked piece ends up: held in front of him (hidden by his back)
       this.heroChest = { x: this.heroHome.x + 30, y: 840 };
 
-      // the answer crates on the road at his feet (shown for a throw)
-      this.crates = new Crates();
-      this.el.appendChild(this.crates.el);
+      // the bag of pieces on the road at his right hand (his throwing arm),
+      // a third of his height (~370 px standing here); in the wide shot
+      this.bag = new Bag('bagBack', { x: this.heroHome.x + 155, y: this.heroHome.y + 2, h: 124, z: 14 });
+      this.el.appendChild(this.bag.el);
 
       this.projectile = new Projectile(this.R);
       this.projectile.el.style.zIndex = 15;
@@ -1430,16 +1403,17 @@ window.ZD = window.ZD || {};
       this.zombie.play({ sheet: 'zombie.front.idle', fps: 8, loop: true });
     }
 
-    /* ---- pick a piece out of its crate (LXD change 4) ----
-       The crate's lid pops, the piece rises out of it and hops into the
-       boy's hands, growing as it forms, while he bends down towards the
-       crates and straightens up with it.  There is no bend sheet: the bend
-       is the throw sheet's first pose (arms loose), leaning over, dipping
-       and squashed a little at the knees - transform only.  The piece ends
-       held in front of him (behind his back from here); the throw that
-       follows lets it go from his hand (game.throwFront).  ~0.75 s. */
-    async pickUp(id, spec) {
-      const c = this.crates.get(id);
+    /* ---- take the piece out of the bag ----
+       He bends towards the bag at his right hand; it squashes and springs
+       back as the piece rises out of its open top and hops into his hands,
+       growing as it forms, and he straightens up with it.  There is no bend
+       sheet: the bend is the throw sheet's first pose (arms loose), leaning
+       over, dipping and squashed a little at the knees - transform only.
+       The piece ends held in front of him (behind his back from here); the
+       throw that follows lets it go from his hand (game.throwFront).
+       ~0.75 s. */
+    async pickUp(spec) {
+      const bag = this.bag;
       const hero = this.hero;
       const P = this.projectile;
       const S = this.heroScale;
@@ -1454,14 +1428,14 @@ window.ZD = window.ZD || {};
       hero.setFrame(1);
       M.stop(b);
       M.to(b, { k: 1, ms: D(260), ease: EASE.OUT, onUpdate: pose });
-      if (c) {
-        this.crates.open(id);
+      if (bag) {
+        bag.bounce();
         ZD.audio.play('pop');
-        fx.sparkles(this.fxLayer, c.cx, c.top + 14, 12, '#fff2a8');
+        fx.sparkles(this.fxLayer, bag.mouth.x, bag.mouth.y, 12, '#fff2a8');
         P.setSpec(spec, 0);
         P.setTrail(0, 0);
         P.el.style.opacity = '';
-        const from = { x: c.cx, y: c.top + 20 };
+        const from = bag.mouth;
         const to = this.heroChest;
         const ctrl = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 190 };
         P.set(from.x, from.y, 0.2, -25, 1);
@@ -1661,7 +1635,8 @@ window.ZD = window.ZD || {};
         this.el.appendChild(lay.node);
         return lay;
       };
-      L(tiledLayer('sky', { y: -60, z: 1, factor: 0 }));
+      L(tiledLayer('sky', { y: SKY_Y, z: 1, factor: 0 }));
+      this.el.appendChild(skyCap());
       this.clouds = cloudLayers([['cloud2', 60, 140, 0.55, false], ['cloud3', 620, 250, 0.6, false], ['cloud1', 1080, 110, 0.55, true], ['cloud4', 1560, 220, 0.55, true], ['cloud3', 2000, 90, 0.5, false], ['cloud1', -280, 280, 0.45, false]], 0.04).map(L);
       // the sun is very far away: it barely moves however far the hero runs
       L(sunLayer({ x: 1480, y: 330, d: 230, factor: 0.012 }));
@@ -1700,8 +1675,11 @@ window.ZD = window.ZD || {};
       // walls: two slots so the next checkpoint can slide in while this one leaves
       this.wallHome = 985; // x of the wall's left edge at rest
       const wallDef = A.wall('angle1');
-      // same on-screen size as with the first wall art (see-through height 126.6)
-      this.wallScale = 126.6 / wallDef.hole.ry;
+      /* Sized by the see-through part of the hole: half-height 163 px, ~1.29x
+         the first wall art's 126.6 - the same growth as the front view's
+         window with the big-hole art (2026-11-17).  The wall stands ~690 px
+         tall, its top well inside the stage. */
+      this.wallScale = 163 / wallDef.hole.ry;
       this.wallW = Math.round(wallDef.w * this.wallScale);
       this.wallH = Math.round(wallDef.h * this.wallScale);
       // see-through part of the hole (the leap cover is cut at its centre)
@@ -1716,7 +1694,7 @@ window.ZD = window.ZD || {};
       this.holeRx = rim.rx * this.wallScale + GLASS_OVERLAP;
       this.holeRot = rim.rot;
 
-      /* Stand the wall (the least-turned wall of wall/image copy.png, drawn as
+      /* Stand the wall (the turned view of wall/big-hole.png, drawn as
          it is - no skew) on the road's top surface.  Its base runs from the
          far corner down to the near corner (both measured by build_walls):
          the near corner stands just behind the road's front edge, which puts
@@ -1768,6 +1746,15 @@ window.ZD = window.ZD || {};
       this.hero.setPos(this.heroHome.x, this.heroHome.y);
       this.el.appendChild(this.hero.el);
       this.heroHand = { x: this.heroHome.x + Math.round(170 * this.heroScale), y: this.groundY - Math.round(190 * this.heroScale) };
+      // the bag of pieces (Bag) on the road just behind his spot - a third
+      // of his ~260 px.  Behind him, as the zombie that breaks through lands
+      // in front of him (heroHome + 200) and he falls back in front of it.
+      // Only ever seen beside him (showBag): it lies on the road at the
+      // current wall (scrolls with it, setScroll) and fades out as he runs
+      // off, in again when he stands at the next wall.
+      this.bag = new Bag('bagSide', { x: this.heroHome.x - 130, y: this.groundY - 2, h: 96, z: 13, cls: 'scrolls' });
+      this.bagOn = true;
+      this.el.appendChild(this.bag.el);
 
       this.zombieHome = { x: 1500, y: this.groundY + 4 };
       this.zombie = new ZD.Sprite({ className: 'char-zombie', zIndex: 18 });
@@ -1840,6 +1827,8 @@ window.ZD = window.ZD || {};
         w.root.style.transform = `translateX(${w.offset - px}px)`;
       });
       this.zombie.setPos(this.zombieHome.x + this.zombieOffset - px, this.zombieHome.y);
+      // the bag lies on the road at the current wall
+      if (this.bag) this.bag.el.style.transform = `translateX(${-px}px)`;
       if (this.gate) this.gate.style.transform = `translateX(${this.gateOffset - px}px)`;
       if (this.gateDoors) this.gateDoors.style.transform = `translateX(${this.gateOffset - px}px)`;
     }
@@ -1977,11 +1966,38 @@ window.ZD = window.ZD || {};
       return HERO_RUN_SPEED;
     }
 
+    /* The bag is only ever seen beside the boy: in (fade, ease-out) when he
+       stands at a wall to fight (game.wallTitle; at once on a reset), out
+       (ease-in) as soon as he runs off (heroRunAt).  Hidden, it is also
+       taken out of painting (visibility). */
+    showBag(on, ms = 320) {
+      const b = this.bag.el;
+      this.bagOn = on;
+      M.stop(b);
+      if (on) b.style.visibility = '';
+      if (!ms) {
+        b.style.opacity = on ? '' : '0';
+        if (!on) b.style.visibility = 'hidden';
+        return null;
+      }
+      return M.to(b, {
+        opacity: on ? 1 : 0,
+        ms: D(ms),
+        ease: on ? EASE.OUT : EASE.IN,
+        onComplete: () => {
+          if (on) b.style.opacity = '';
+          else b.style.visibility = 'hidden';
+        },
+      });
+    }
+
     /* Show the run-cycle frame for `dist` px run so far (see RUN_FRAME_PX).
        Returns true when this call moved onto a foot-landing frame, so the
        caller can play the step sound / kick up dust right on the contact. */
     heroRunAt(dist) {
       const h = this.hero;
+      // he runs off: his bag does not stay behind on the road
+      if (this.bagOn) this.showBag(false);
       if (h.sheetName !== 'hero.sideRun' || h.anim) {
         h.stop();
         h.setSheet('hero.sideRun');
@@ -2262,7 +2278,9 @@ window.ZD = window.ZD || {};
       this.clearHorde();
       for (let i = 0; i < n; i++) {
         const skin = ZD.scene.zombieSkins[(i + 1) % 2];
-        const z = new ZD.Sprite({ className: 'char-zombie extra', zIndex: 17 - i, skin });
+        // behind the wall (12) - their reaching hands must not cross it - but
+        // over the road props (9); the front one tops the ranks behind it
+        const z = new ZD.Sprite({ className: 'char-zombie extra', zIndex: i ? 10 : 11, skin });
         // a skin with a walk cycle (the road worker) walks in; the others run
         const walks = !!A.sprite((skin || 'zombie') + '.side.walk');
         const sheet = walks ? 'zombie.side.walk' : 'zombie.side.run';

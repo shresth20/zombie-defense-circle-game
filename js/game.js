@@ -1,8 +1,8 @@
 /* Game state machine: title -> story / how-to-play -> 6 walls -> finale.
    The six pieces are shuffled and dealt one per wall, so every piece is
    asked exactly once per play.  Each wall = one question:
-   present (front) -> four answer buttons (+ zombie timer) -> the boy picks
-   the named piece out of its crate and throws it ->
+   present (front) -> four answer buttons (+ zombie timer) -> the boy takes
+   the named piece out of his bag and throws it ->
      right: zombie knocked out, window opens (side), then the learner takes
        the controller: hold RUN, tap JUMP through the circle, run on to the
        next wall (runAndJump)
@@ -187,9 +187,9 @@ window.ZD = window.ZD || {};
       front.stopZombie();
       front.setZombieHp(0, 0);
       front._placeZombie(front.zpose.mid, 0);
-      // (a pick cut short leaves him bent over)
+      // (a pick cut short leaves him bent over, the bag squashed)
       front.hero.setScale(front.heroScale);
-      front.crates.hide();
+      front.bag.reset();
       front.glass.restore();
       front.setTarget(null);
       front.frame('wide', { duration: 0 });
@@ -197,6 +197,7 @@ window.ZD = window.ZD || {};
       side.endTour();
       side.clearHorde();
       side.removeGate();
+      side.showBag(true, 0); // (a run hid it)
       side.walls.forEach((w, i) => {
         M.stop(w.glass.el); // (prepareRetry's cross-fade)
         w.glass.el.style.opacity = '';
@@ -300,6 +301,8 @@ window.ZD = window.ZD || {};
       wall.retry = false;
       ZD.audio.play('alarm');
       side.zombieWalkIn(5200);
+      // he stands at this wall to fight: his bag is on the road by him
+      side.showBag(true);
       const vars = { n: wall.n, total: wall.total };
       const lines = keys.map((k) => ZD.ui.guide(k, { vars, kind: 'alert' }));
       // read in full, but never hold the zombie's walk-in up
@@ -331,7 +334,6 @@ window.ZD = window.ZD || {};
         side.wall.glass.restore();
         side.setTarget(target);
         if (camera.current !== 'front') {
-          front.crates.hide();
           front.glass.restore();
           front.setTarget(target);
           front.glass.lightsOff();
@@ -468,7 +470,7 @@ window.ZD = window.ZD || {};
         this.guard(E);
         const btn = ZD.ui.answerBtns && ZD.ui.answerBtns[id];
         if (!btn) return;
-        await hand.enter(ZD.intro.stagePoint(btn, 0.36, 0.22));
+        await hand.enter(ZD.intro.pillPoint(btn));
         this.guard(E);
         await Promise.race([line || Promise.resolve(), wait(D(4500))]);
         this.guard(E);
@@ -510,24 +512,21 @@ window.ZD = window.ZD || {};
     },
 
     /* --------------------------------------------- front: throw sequence
-       1. the picked name: the window's rim lights flare, the pieces' crates
-          (named as the buttons, same order) light the tapped one
-       2. pull back to the wide shot - the boy and the crates at his feet:
-          the crate's lid pops, the piece hops into his hands as he bends
-          (front.pickUp), he straightens up, winds up and throws
+       1. the picked name: the window's rim lights flare
+       2. pull back to the wide shot - the boy and his bag on the road at
+          his right hand: he bends to it, the piece rises out of its open
+          top and hops into his hands (front.pickUp), he straightens up,
+          winds up and throws
        3. the camera rides with the piece into the wall (then the outcome,
           and the view swings to the side at the window) */
     async throwFront(spec, target, correct, E, { final = true, hpIndex = 0 } = {}) {
       const { front, camera } = ZD.scene;
       const P = front.projectile;
-      const id = geo.idOf(spec); // the tapped name: its crate
       // the side view is painted now, unseen: the outcome swings to it
       // (with the sheets its characters will switch to decoded)
       camera.prewarm('side');
       if (!correct || final) ZD.scene.primeSheets('side', correct ? SHEETS.win : SHEETS.lose);
       P.show(false);
-      front.crates.show(ZD.ui.order && ZD.ui.order.includes(id) ? ZD.ui.order : [id]);
-      front.crates.light(id);
       ZD.audio.play('pick');
       front.glass.pick();
       await wait(D(250));
@@ -537,7 +536,7 @@ window.ZD = window.ZD || {};
       front.frame('wide', { duration: 700, easing: 'easeInOutCubic' });
       await wait(D(380));
       this.guard(E);
-      await front.pickUp(id, spec);
+      await front.pickUp(spec);
       this.guard(E);
       P.setSpec(spec, 0);
       // wind-up from the pose he picked it up in (frame 1); it leaves his hand on frame 7
@@ -594,9 +593,7 @@ window.ZD = window.ZD || {};
         this.guard(E);
       } else {
         // anything else smashes into the glass
-        front.glass.highlight('bad');
-        front.glass.crack(0, 0);
-        ZD.audio.play('crack');
+        this.crackGlass();
         fx().shards(front.fxLayer, to.x, to.y, 16);
         fx().ring(front.fxLayer, to.x, to.y, '#ff3b5c', 80);
         fx().flash('#ff3b5c', 320, 0.3);
@@ -627,9 +624,7 @@ window.ZD = window.ZD || {};
       front.frame('lock', { duration: 450, easing: 'easeOutCubic' });
       await wait(D(450));
       this.guard(E);
-      front.glass.highlight('bad');
-      front.glass.crack(0, 0);
-      ZD.audio.play('crack');
+      this.crackGlass();
       fx().shards(front.fxLayer, front.hole.x, front.hole.y, 12);
       fx().shake(12, 480);
       await bang;
@@ -637,6 +632,19 @@ window.ZD = window.ZD || {};
       await wait(D(300));
       this.guard(E);
       await ZD.scene.camera.to('side', { zoomAt: front.hole });
+    },
+
+    /* The window cracks (front view): the cracks spread over the glass.
+       The side view shows the same window, so its glass takes the same
+       cracks at once, unseen - after the swing it is already cracked and
+       the zombie only smashes through it (zombieBreakIn). */
+    crackGlass() {
+      const { front, side } = ZD.scene;
+      front.glass.highlight('bad');
+      front.glass.crack(0, 0);
+      ZD.audio.play('crack');
+      side.wall.glass.highlight('bad');
+      side.wall.glass.crack(0, 0, { pattern: front.glass.crackPattern, instant: true });
     },
 
 
@@ -1032,7 +1040,10 @@ window.ZD = window.ZD || {};
       const z = side.zombie;
       const hero = side.hero;
       const glass = side.wall.glass;
-      glass.crack(0, 0);
+      // the glass is already cracked (it cracked in the front view -
+      // crackGlass): the zombie just smashes through.  Cracks only spread
+      // here when nothing cracked it before.
+      if (!glass.cracked) glass.crack(0, 0);
       ZD.audio.play('alarm');
       ZD.audio.play('groan');
       side.showCover(true);
@@ -1141,9 +1152,12 @@ window.ZD = window.ZD || {};
        pushes in on the two of them (defeatCam), the view dims to dusk
        purple, a soft burst of red rays opens and the GAME OVER sign drops
        in over them.  After a beat the sign makes way for the review of the
-       miss ("Look again": the gap vs. the piece picked, and why - ZD.ui
-       .reviewCard); its button (Try again, or after the last chance Show
-       me) zooms back out and playMission plays the wall again. */
+       miss ("Look again": the gap vs. the piece picked, and why, as an
+       animation on the two circles - ZD.ui.reviewCard); its Try again
+       button (every miss, the last chance too) comes up when the animation
+       ends, zooms back out and playMission plays the wall again.  After a
+       time-out there is no review: the sign stays up and the same button
+       comes up under it. */
     async gameOver(E, wall) {
       ZD.ui.showHud(false);
       const ov = document.getElementById('gameover');
@@ -1172,33 +1186,61 @@ window.ZD = window.ZD || {};
       fx().shake(9, 320);
       // behind the game-over screen the wall is already set for the retry
       this.prepareRetry(wall);
-      // 3. a beat on the sign, then it rises away with the rays for the review
-      await wait(D(1300));
-      this.guard(E);
-      ZD.audio.play('swoosh');
-      M.exit(rays, null, { ms: D(300) });
-      await M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
-      this.guard(E);
-      // 4. "Look again": the gap vs. the piece picked, and why
       const miss = wall.lastMiss || {};
-      const card = ZD.ui.reviewCard({
-        target: miss.target,
-        chosen: miss.chosen,
-        thrown: miss.chosen ? wrongPiece(miss.chosen, miss.target) : null,
-        button: T(wall.misses >= CHANCES ? 'btnShowMe' : 'btnTryAgain'),
-      });
-      ov.appendChild(card.el);
-      ZD.audio.play('pop');
-      await M.pop(card.el, { y: 60, scale: 0.92 }, { ms: D(420) });
-      this.guard(E);
-      card.button.focus({ preventScroll: true });
-      I18n.say(geo.reasonKey(miss.target));
+      // (the retry button after every miss - after the last chance too,
+      // though the game then answers the next go itself: wall.assist)
+      const label = T('btnTryAgain');
+      let box; // what goes when its button is tapped
+      if (!miss.chosen) {
+        // time ran out: no review - the sign stays up and the replay
+        // button comes up under it
+        await wait(D(600));
+        this.guard(E);
+        const btn = ZD.ui.replayButton(label);
+        box = el('div', { class: 'go-replay' }, [btn]);
+        ov.appendChild(box);
+        ZD.audio.play('pop');
+        await M.pop(btn, { y: 18, scale: 0.85 });
+        M.clear(btn); // (inline transform would block :hover / :active)
+        this.guard(E);
+        btn.focus({ preventScroll: true });
+        await this.awaitInput(new Promise((res) => btn.addEventListener('click', res, { once: true })), E);
+        this.guard(E);
+        ZD.audio.play('click');
+        I18n.stop();
+        M.exit(rays, null, { ms: D(300) });
+        M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
+      } else {
+        // 3. a beat on the sign, then it rises away with the rays for the review
+        await wait(D(1300));
+        this.guard(E);
+        ZD.audio.play('swoosh');
+        M.exit(rays, null, { ms: D(300) });
+        await M.to(sign, { y: -120, opacity: 0, ms: D(300), ease: EASE.IN });
+        this.guard(E);
+        // 4. "Look again": the gap vs. the piece picked; the why is shown
+        //    as an animation on the two circles, then the button comes up
+        const card = ZD.ui.reviewCard({
+          target: miss.target,
+          chosen: miss.chosen,
+          thrown: wrongPiece(miss.chosen, miss.target),
+          button: label,
+        });
+        box = card.el;
+        ov.appendChild(card.el);
+        ZD.audio.play('pop');
+        await M.pop(card.el, { y: 60, scale: 0.92 }, { ms: D(420) });
+        this.guard(E);
+        await this.awaitInput(card.explain(), E);
+        this.guard(E);
+        card.button.focus({ preventScroll: true });
 
-      await this.awaitInput(card.done, E);
-      this.guard(E);
-      // leave: the card goes, the camera eases back out
+        await this.awaitInput(card.done, E);
+        this.guard(E);
+      }
+      // leave: the card (or button) goes, the camera eases back out
       ZD.audio.play('swoosh');
-      M.exit(card.el, { y: 40, scale: 0.95 }, { ms: D(240) });
+      M.exit(box, { y: 40, scale: 0.95 }, { ms: D(240) });
       const out = this.defeatCamOut(D(650));
       await M.exit(shade, null, { ms: D(500), delayMs: D(150) });
       await out;
@@ -1284,9 +1326,10 @@ window.ZD = window.ZD || {};
       side.zombie.setFlip(false);
       side.wall.glass.restore();
       side.idle();
+      side.showBag(true, 0);
       // the retry's fresh zombie walks in again (wallTitle)
       side.zombie.show(false);
-      front.crates.hide();
+      front.bag.reset();
       front.glass.restore();
       front.frame('wide', { duration: 0 });
       front.idle();

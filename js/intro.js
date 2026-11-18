@@ -22,40 +22,75 @@ window.ZD = window.ZD || {};
   const T = (k, v) => ZD.T(k, v);
   const D = (ms) => ZD.scene.D(ms);
 
-  /* Demo hand: a cartoon glove that points with its index finger.  Drawn
-     twice (dark outline pass, then white fill) so the parts read as one
-     shape.  Its fingertip is the point it moves to. */
-  const HAND_PARTS =
-    '<rect x="36" y="6" width="22" height="70" rx="11"/>' +
-    '<rect x="26" y="52" width="60" height="56" rx="18"/>' +
-    '<rect x="56" y="44" width="18" height="34" rx="9"/>' +
-    '<rect x="70" y="50" width="16" height="30" rx="8"/>' +
-    '<rect x="12" y="62" width="32" height="18" rx="9" transform="rotate(-25 28 71)"/>';
+  /* Demo hand: a flat line icon - one even indigo stroke with round ends,
+     the index finger up, three short bumps for the folded fingers, the thumb
+     out to the left, a round palm.  Filled light lavender so it reads on the
+     orange pills, the green RUN button and the dark sky alike.  Its
+     fingertip is the point it moves to. */
+  const HAND_LINE = '#5e5acd';
+  const HAND_FILL = '#f3f0fc';
+  // the outline: index finger, thumb, palm, little finger
+  const HAND_OUTLINE =
+    'M44.5 57V15.6A7 7 0 0 0 30.5 15.6V66C26 62 21 59 15 59.5C8 60 6 68.5 10.5 73.5L33 98' +
+    'C40 106 50 112 62 112C78 112 90.5 99 90.5 84V49.5A7.3 7.3 0 0 0 75.9 49.5V57';
+  // the middle and ring fingers (each ends in a short line between the bumps)
+  const HAND_FINGERS = 'M44.5 37.2A7.9 7.9 0 0 1 60.3 37.2V57M60.3 46.6A7.8 7.8 0 0 1 75.9 46.6V57';
+  // the whole silhouette, for the fill
+  const HAND_SHAPE =
+    'M30.5 66V15.6A7 7 0 0 1 44.5 15.6V37.2A7.9 7.9 0 0 1 60.3 37.2V46.6A7.8 7.8 0 0 1 75.9 46.6' +
+    'V49.5A7.3 7.3 0 0 1 90.5 49.5V84C90.5 99 78 112 62 112C50 112 40 106 33 98L10.5 73.5' +
+    'C6 68.5 8 60 15 59.5C21 59 26 62 30.5 66Z';
+  const HAND_VB = { x: 2, y: 4, w: 94, h: 112 };
   const HAND_SVG =
-    '<svg viewBox="0 0 100 130" aria-hidden="true">' +
-    `<g fill="#2a1145" stroke="#2a1145" stroke-width="10" stroke-linejoin="round">${HAND_PARTS}</g>` +
-    `<g fill="#ffffff">${HAND_PARTS}</g>` +
-    '<path d="M60 62v12M73 64v12" stroke="#cdbfe0" stroke-width="3" stroke-linecap="round"/>' +
-    '<rect x="30" y="104" width="52" height="20" rx="6" fill="#5aa9ff" stroke="#2a1145" stroke-width="5"/>' +
-    '</svg>';
-  const HAND_W = 118;
-  const HAND_TIP = { x: HAND_W * 0.47, y: HAND_W * 1.3 * 0.05 };
+    `<svg viewBox="${HAND_VB.x} ${HAND_VB.y} ${HAND_VB.w} ${HAND_VB.h}" aria-hidden="true">` +
+    `<path d="${HAND_SHAPE}" fill="${HAND_FILL}"/>` +
+    `<g fill="none" stroke="${HAND_LINE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">` +
+    `<path d="${HAND_OUTLINE}"/><path d="${HAND_FINGERS}"/></g></svg>`;
+
+  /* the tap accent: three short strokes in the hand's line that spring out
+     round the fingertip (drawn round 0,0 = the fingertip, at full size) */
+  const SPARK_SVG = (() => {
+    let d = '';
+    for (const deg of [-100, -55, -10]) { // up and to the right, away from the labels
+      const a = (deg * Math.PI) / 180;
+      const p = (r) => `${(Math.cos(a) * r).toFixed(1)} ${(Math.sin(a) * r).toFixed(1)}`;
+      d += `M${p(34)}L${p(50)}`;
+    }
+    return (
+      '<svg viewBox="-60 -60 120 120" aria-hidden="true" fill="none" stroke-linecap="round">' +
+      `<path d="${d}" stroke="${HAND_LINE}" stroke-width="6"/></svg>`
+    );
+  })();
+  const HAND_W = 112; // = .demo-hand width in style.css
+  // the fingertip's touch point (just inside the round tip), in px of the hand box
+  const HAND_TIP = { x: ((37.5 - HAND_VB.x) * HAND_W) / HAND_VB.w, y: ((12 - HAND_VB.y) * HAND_W) / HAND_VB.w };
 
   function demoHand(parent) {
     const node = el('div', { class: 'demo-hand', html: HAND_SVG });
     node.style.transformOrigin = `${HAND_TIP.x}px ${HAND_TIP.y}px`;
     const ring = el('div', { class: 'demo-ring' });
-    parent.append(ring, node);
+    const spark = el('div', { class: 'demo-spark', html: SPARK_SVG });
+    parent.append(ring, spark, node);
     const st = { x: 1500, y: 1250, s: 1 };
     const apply = () => {
       node.style.transform = `translate3d(${(st.x - HAND_TIP.x).toFixed(1)}px, ${(st.y - HAND_TIP.y).toFixed(1)}px, 0) scale(${st.s.toFixed(3)})`;
     };
     node.style.opacity = '0';
     ring.style.opacity = '0';
+    spark.style.opacity = '0';
+    let held = false; // the ring is showing a press-and-hold
     apply();
     const tween = (o, ms, ease) => {
       M.stop(st);
       return M.to(st, Object.assign({ ms: D(ms), ease, onUpdate: apply }, o));
+    };
+    // ring and sparks centre on the fingertip (placed by left/top, which
+    // never animate: GSAP owns their transform)
+    const placeFx = () => {
+      ring.style.left = st.x - 40 + 'px';
+      ring.style.top = st.y - 40 + 'px';
+      spark.style.left = st.x - 60 + 'px';
+      spark.style.top = st.y - 60 + 'px';
     };
     return {
       el: node,
@@ -77,24 +112,42 @@ window.ZD = window.ZD || {};
       async tap() {
         await tween({ s: 0.84 }, 120, EASE.IN);
         ZD.audio.play('click');
-        // a ring opens under the fingertip
-        // (placed by left/top, which never animate: GSAP owns its transform)
-        M.stop(ring);
-        ring.style.left = st.x - 40 + 'px';
-        ring.style.top = st.y - 40 + 'px';
+        // a ring opens under the fingertip and the tap strokes spring out
+        // (they end at full size: no upscaled raster)
+        M.stop([ring, spark]);
+        placeFx();
         M.fromTo(ring, { opacity: 0.95, scale: 0.3 }, { opacity: 0, scale: 1.5, ms: D(520), ease: PHYS.BURST });
+        M.fromTo(spark, { scale: 0.6 }, { scale: 1, ms: D(320), ease: PHYS.BURST });
+        M.fromTo(spark, { opacity: 1 }, { opacity: 0, ms: D(220), delayMs: D(200), ease: EASE.IN });
         await tween({ s: 1 }, 220, EASE.POP);
       },
+      /* press and hold: the ring closes in under the fingertip and stays */
       press() {
+        held = true;
+        M.stop(ring);
+        placeFx();
+        M.fromTo(ring, { opacity: 0, scale: 0.3 }, { opacity: 0.95, scale: 0.8, ms: D(200), ease: EASE.OUT });
         return tween({ s: 0.86 }, 140, EASE.IN);
       },
       release() {
+        held = false;
+        M.stop(ring);
+        M.to(ring, { opacity: 0, scale: 1.4, ms: D(380), ease: PHYS.BURST });
         return tween({ s: 1 }, 200, EASE.POP);
       },
       hide() {
-        M.stop(node);
-        M.to(node, { opacity: 0, ms: D(240), ease: EASE.IN });
+        // (a ring still held fades with the hand; a tap's ring runs its course)
+        const out = held ? [node, ring] : [node];
+        held = false;
+        M.stop(out);
+        M.to(out, { opacity: 0, ms: D(240), ease: EASE.IN });
         return tween({ y: st.y + 120 }, 260, EASE.IN);
+      },
+      remove() {
+        M.stop([st, node, ring, spark]);
+        node.remove();
+        ring.remove();
+        spark.remove();
       },
     };
   }
@@ -107,6 +160,10 @@ window.ZD = window.ZD || {};
     const r = node.getBoundingClientRect();
     return { x: (r.left + r.width * (0.5 + fx) - sr.left) / k, y: (r.top + r.height * (0.5 + fy) - sr.top) / k };
   }
+
+  /* where the hand taps an answer pill: low on its right end, so the
+     fingertip stays clear of even the longest label (440 x 124 pill) */
+  const pillPoint = (btn) => stagePoint(btn, 0.38, 0.25);
 
   const intro = {
     /* Welcome screen: the road picture (full-picture/image copy 5.png) as
@@ -345,7 +402,7 @@ window.ZD = window.ZD || {};
         ui.ask(t1.id);
         line = say('storyTap', { kind: 'ask' });
         await pause(700); // (the buttons slide in)
-        const pill = (id) => stagePoint(ui.answerBtns[id], 0.36, 0.22); // right of the label: the hand never hides a name
+        const pill = (id) => pillPoint(ui.answerBtns[id]); // right of the label: the hand never hides a name
         await step(hand.enter(pill(t1.id)));
         await step(line);
         // the zombie timer: the face walks to the wall
@@ -409,6 +466,7 @@ window.ZD = window.ZD || {};
         side.hero.setFlip(false);
         side.hero.setPos(side.heroHome.x, side.heroHome.y);
         heroIdle();
+        side.showBag(true, 0); // (the demo run hid it)
         side.zombieOffset = 0;
         side.setScroll(0);
         side.zombie.setFlip(false);
@@ -504,7 +562,7 @@ window.ZD = window.ZD || {};
 
       // under the cover: a clean first wall, then the cover lifts
       skipBtn.remove();
-      hand.el.remove();
+      hand.remove();
       G.resetAll({ keep: ['intro'] });
       camera.cut('side');
       ZD.scene.setZombieSkin(0);
@@ -522,5 +580,6 @@ window.ZD = window.ZD || {};
   // the same hand: game.assistTap)
   intro.demoHand = demoHand;
   intro.stagePoint = stagePoint;
+  intro.pillPoint = pillPoint;
   ZD.intro = intro;
 })();

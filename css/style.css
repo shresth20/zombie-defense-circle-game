@@ -8,6 +8,14 @@
   font-weight: 400;
   font-display: swap;
 }
+/* Trig Text: a lighter cut of Lilita One (same shapes, thinner strokes) for
+   the instruction bar.  OFL - licence in assets/fonts/trig_text/ofl.txt */
+@font-face {
+  font-family: 'Trig Text';
+  src: url('../assets/fonts/trig_text/trigtext-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
 @font-face {
   font-family: 'Nunito';
   src: url('../assets/fonts/Nunito.woff2') format('woff2');
@@ -26,6 +34,7 @@
   --red: #ff3b5c;
   --blue: #7cd8ff;
   --display: 'Lilita One', 'Arial Black', Impact, sans-serif;
+  --text: 'Trig Text', 'Lilita One', 'Arial Black', Impact, sans-serif;
   --body: 'Nunito', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   /* Look-unification filters: distant art is softened and cooled, characters
      get a touch more punch so the mixed-source assets read as one palette. */
@@ -33,7 +42,8 @@
   --f-mid: saturate(0.96) contrast(0.98);
   --f-hero: saturate(1.05) contrast(1.04);
   --f-zombie: saturate(0.88) contrast(1.06) brightness(0.97) hue-rotate(-4deg);
-  --f-wall: saturate(0.94) brightness(0.98);
+  /* walls: no runtime filter - their colours are graded to the road's palette
+     when the art is built (WALL_GRADE in tools/build-assets.py) */
 }
 
 * { box-sizing: border-box; }
@@ -135,6 +145,9 @@ canvas.wash {
 }
 .layer.prop { background-repeat: no-repeat; }
 .layer.tiled .tile { position: absolute; top: 0; background-repeat: no-repeat; background-position: 0 0; }
+/* the sky carried on above its art (skyCap in js/scene.js): the colour of
+   bg/sky.webp's top rows - change both together */
+.sky-cap { position: absolute; z-index: 1; background: #4b16b5; pointer-events: none; }
 /* a scrolling strip's world-wide window (tiledLayer in js/scene.js) */
 .strip-clip { position: absolute; overflow: hidden; pointer-events: none; }
 /* the art of a moving layer (see propLayer / sunLayer in js/scene.js) */
@@ -156,12 +169,11 @@ canvas.wash {
   background-size: 100% 100%;
   background-repeat: no-repeat;
   pointer-events: none;
-  filter: var(--f-wall);
 }
-.wall-side { filter: var(--f-wall) drop-shadow(-18px 10px 14px rgba(20, 0, 40, 0.45)); }
+.wall-side { filter: drop-shadow(-18px 10px 14px rgba(20, 0, 40, 0.45)); }
 /* moved by setScroll while the hero runs (a .scrolls layer, see below) */
 .wall-slot { position: absolute; inset: 0; pointer-events: none; }
-.wall-cover { position: absolute; overflow: visible; pointer-events: none; filter: var(--f-wall); }
+.wall-cover { position: absolute; overflow: visible; pointer-events: none; }
 .wall-cover-wrap, .wall-box { position: absolute; inset: 0; pointer-events: none; }
 .wall-shadow { position: absolute; height: 32px; border-radius: 50%; pointer-events: none; background: radial-gradient(ellipse at center, rgba(30, 6, 40, 0.55), rgba(30, 6, 40, 0) 70%); }
 .interior {
@@ -222,8 +234,7 @@ canvas.wash {
 #world:not(.alarm) #alarm-light .alarm-pulse { animation-play-state: paused; }
 @keyframes alarmPulse { from { opacity: 0.45; } to { opacity: 1; } }
 /* The game-over shade covers only the visible stage (--ov-*, set by
-   fitStage in js/main.js) - less GPU area to rasterise and blend.  Its
-   gradient keeps its design box (2560 x 1700 at -320, -300). */
+   fitStage in js/main.js) - less GPU area to blur and blend. */
 .go-shade {
   left: var(--ov-l, -320px);
   top: var(--ov-t, -300px);
@@ -272,8 +283,8 @@ canvas.wash {
    rim lights, pick ping) inside one zero-size box; the glows animate whole
    svgs (compositor opacity / transform), never blurred paths in place */
 .glass-wrap, .glass-lights { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
-/* rim lights of the opening (light-yellow neon): the bloom breathes slowly
-   and softly, the tube and filament stay lit; picked / approach flare
+/* rim light of the opening (one solid light-yellow line): the bloom breathes slowly
+   and softly, the line stays lit; picked / approach flare
    white-yellow, the outcome turns them green or red */
 .glass-halo-layer { animation: rimBreath 2.2s ease-in-out infinite alternate; }
 @keyframes rimBreath { from { opacity: 1; } to { opacity: 0.62; } }
@@ -281,10 +292,9 @@ canvas.wash {
 .glass-lights.good .glass-halo-layer, .glass-lights.bad .glass-halo-layer { animation: none; opacity: 1; }
 .glass-lights.picked .glass-halo, .glass-lights.locked .glass-halo { stroke: #fff4a8; }
 .glass-lights.picked .glass-outline, .glass-lights.locked .glass-outline { stroke: #fffbe0; stroke-width: 8; }
+.glass-lights.arc.picked .glass-outline, .glass-lights.arc.locked .glass-outline { stroke-width: 11; } /* an arc: a touch over its 8 px line */
 .glass-lights.good .glass-halo, .glass-lights.good .glass-outline { stroke: var(--green); }
 .glass-lights.bad .glass-halo, .glass-lights.bad .glass-outline { stroke: var(--red); }
-.glass-lights.good .glass-filament { stroke: #eaffef; }
-.glass-lights.bad .glass-filament { stroke: #ffe3e8; }
 .glass-ping-layer { opacity: 0; }
 
 /* ---------------- front-view camera rig ---------------- */
@@ -336,49 +346,21 @@ canvas.wash {
 
 @keyframes blink { from { opacity: 1; } to { opacity: 0.35; } }
 
-/* ---------------- answer crates (front view, at the boy's feet) ----------------
-   Four closed crates named as the answer buttons (js/scene.js Crates).  The
-   tapped one lights up: its glow (painted once, static) fades in by
-   opacity; the lid pops off by transform. */
-.crates { position: absolute; inset: 0; pointer-events: none; }
-.crate { position: absolute; width: 224px; height: 118px; }
-.crate-inner, .crate-inner svg { position: absolute; left: 0; top: 0; display: block; overflow: visible; }
-.crate-shadow {
+/* ---------------- the bag of pieces (js/scene.js Bag) ----------------
+   One open backpack on the road by the boy, both views.  The art squashes
+   on its base and springs back as a piece comes out (transform only); its
+   contact shadow stays on the road. */
+.bag { position: absolute; pointer-events: none; }
+.bag-art { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; transform-origin: 50% 100%; }
+.bag-shadow {
   position: absolute;
-  left: -14px;
-  right: -14px;
-  bottom: -14px;
-  height: 30px;
+  left: -14%;
+  right: -14%;
+  bottom: -9%;
+  height: 20%;
   border-radius: 50%;
   background: radial-gradient(ellipse at center, rgba(30, 6, 40, 0.5), rgba(30, 6, 40, 0) 70%);
 }
-.crate-glow {
-  position: absolute;
-  inset: -12px -12px -6px;
-  border-radius: 24px;
-  background: rgba(255, 209, 102, 0.22);
-  box-shadow: 0 0 0 5px rgba(255, 209, 102, 0.85), 0 0 30px 10px rgba(255, 209, 102, 0.5);
-  opacity: 0;
-}
-.crate-lid { position: absolute; left: 0; top: -4px; width: 224px; height: 34px; transform-origin: 50% 100%; }
-.crate-lid svg { display: block; overflow: visible; }
-.crate-tag {
-  position: absolute;
-  left: 14px;
-  top: 44px;
-  width: 196px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background: linear-gradient(#fff6dc, #f1d9a2);
-  border: 3px solid #5b2a0e;
-  box-shadow: inset 0 -4px 0 rgba(120, 60, 10, 0.22);
-}
-.crate-tag span { font-family: var(--display); font-size: 28px; line-height: 1; color: #5b2a0e; white-space: nowrap; }
-/* lit: the tag turns the picked button's yellow */
-.crate.lit .crate-tag { background: linear-gradient(#fff3b8, #ffd166); }
 
 /* ---------------- projectile & fx ---------------- */
 .projectile {
@@ -763,7 +745,7 @@ canvas.wash {
 /* front view: narrower, so it sits between the hero (right edge x 470) and
    the stage's right half instead of over the hero */
 #stage[data-view="front"] .msgbar { width: 980px; }
-#stage[data-view="front"] .msgbar-line { font-size: 34px; }
+#stage[data-view="front"] .msgbar-line { font-size: 40px; }
 /* the intro's route map covers the stage: the bar stays above it */
 #stage.intro-on .msgbar { z-index: 112; }
 .msgbar-face {
@@ -790,8 +772,8 @@ canvas.wash {
 }
 .msgbar-line {
   grid-area: 1 / 1;
-  font-family: var(--display);
-  font-size: 38px;
+  font-family: var(--text);
+  font-size: 44px;
   line-height: 1.16;
   letter-spacing: 0.4px;
   white-space: nowrap; /* ONE line, always (ui._fitLine shrinks a long one) */
@@ -818,7 +800,22 @@ canvas.wash {
 .overlay.visible { display: flex; }
 .overlay.pass { pointer-events: none; }
 .overlay.pass > * { pointer-events: auto; }
-.overlay.pause, .overlay.complete { background: rgba(14, 8, 30, 0.78); }
+/* Popup veil: behind a popup (pause, level complete, game over + its
+   review) the scene is blurred under a light lavender wash - soft, not a
+   dark dimmer.  A backdrop blur is an offscreen pass every frame it is up
+   (README "Performance" rule 4): kept on purpose, for these few still
+   screens only - never on the moving scene itself. */
+:root { --veil: rgba(214, 194, 255, 0.34); --veil-blur: blur(14px); }
+/* the popup's veil is its ::before, sized to the whole screen (see
+   "Full-screen covers" below) - the overlay box itself is only the stage */
+.overlay.pause::before, .overlay.complete::before {
+  content: '';
+  position: absolute;
+  background: var(--veil);
+  -webkit-backdrop-filter: var(--veil-blur);
+  backdrop-filter: var(--veil-blur);
+  pointer-events: none;
+}
 
 .btn {
   font-family: var(--display);
@@ -988,19 +985,6 @@ canvas.wash {
   color: #fff;
 }
 .lesson-card .btn-row { margin-top: 10px; }
-.lesson-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 20px;
-  border-radius: 30px;
-  font-size: 25px;
-  font-weight: 900;
-  border: 3px solid #fff;
-}
-.lesson-chip.wrong { background: linear-gradient(#ff5c7c, #c8123f); }
-.lesson-chip.time { background: linear-gradient(#ffb347, #e0661c); }
-.lesson-chip .ico { font-size: 24px; }
 .lesson-main { display: flex; align-items: center; gap: 26px; margin-top: 6px; }
 .lesson-diagram svg { display: block; overflow: visible; }
 .lesson-text { flex: 1; text-align: left; }
@@ -1011,31 +995,64 @@ canvas.wash {
 .go-body .lesson-body { margin-top: 6px; }
 
 /* "Look again" - the review after a miss (ZD.ui.reviewCard), over the
-   game-over shade once the sign has gone: the gap vs. the piece picked,
-   and why.  Above the shade and rays (they are positioned). */
-.review-card {
+   game-over shade once the sign has gone: a game panel (night-purple
+   card, violet border - as .panel, no title) with the circles drawn
+   the lesson's way (circle-skill-1), the part that fitted and the piece
+   picked, each explained on its circle, then named on a flat label in
+   the answer pills' colours (green = right, red = the pick) with its
+   rule under it.
+   The Try again button sits below the card, outside it.  Above the shade
+   and rays (they are positioned). */
+.review {
   position: relative;
   z-index: 2;
-  width: 1060px;
-  padding: 26px 48px 32px;
-  border-radius: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+}
+/* sized to fill most of the 1920 x 1080 stage (card + button ~910 px
+   tall): the HUD and the bar are hidden on the game-over screen */
+.review-card {
+  width: 1720px;
+  padding: 54px 70px 50px;
+  border-radius: 44px;
   background: linear-gradient(180deg, #4b2580, #2a123f);
   border: 6px solid #a56cff;
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1), 0 30px 60px rgba(0, 0, 0, 0.6);
   color: #fff;
   text-align: center;
 }
-.review-title { font-family: var(--display); font-size: 58px; font-weight: 400; color: var(--yellow); margin: 0 0 10px; text-shadow: 0 4px 0 var(--purple); line-height: 1.05; }
-.review-pair { display: flex; justify-content: center; gap: 70px; margin: 14px 0 6px; }
-.review-item { display: flex; flex-direction: column; align-items: center; }
-.review-svg { display: block; overflow: visible; }
-.review-caption { font-size: 26px; font-weight: 800; opacity: 0.85; margin-top: 4px; }
-.review-name { font-family: var(--display); font-size: 40px; line-height: 1.1; letter-spacing: 0.5px; }
-.review-item.needed .review-name { color: var(--green); }
-.review-item.chosen .review-name { color: #ff8a9c; }
-.review-reason { font-size: 30px; font-weight: 700; line-height: 1.35; margin: 12px auto 0; max-width: 900px; }
-.review-card .btn-row { margin-top: 22px; }
+.review-pair { display: flex; justify-content: center; gap: 160px; }
+.review-item { display: flex; flex-direction: column; align-items: center; width: 624px; }
+/* drawn on a 400-unit viewBox (reviewCircle in js/ui.js), shown at 480 px:
+   the circle, its strokes and points all scale together */
+.review-svg { display: block; width: 480px; height: 480px; overflow: visible; filter: drop-shadow(0 10px 16px rgba(8, 0, 22, 0.45)); }
+/* the name: a flat label in the answer pills' green / red - no raised
+   edge, bevel or drop shadow, so it never reads as a button to tap */
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 12px 40px 14px 16px;
+  border-radius: 999px;
+  font-family: var(--display);
+  font-size: 48px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+.review-chip.right { background: #5fdc6c; color: #12401c; }
+.review-chip.wrong { background: #e8385a; color: #fff; }
+.review-chip-ico svg { display: block; width: 52px; height: 52px; }
+.review-rule { margin: 24px 0 0; font: 800 38px/1.3 var(--body); color: #efe6ff; }
+/* (the button keeps its place while the explanation plays, so nothing jumps) */
+.review-actions.waiting { visibility: hidden; }
 .review-btn { display: inline-flex; align-items: center; gap: 16px; font-size: 44px; padding: 16px 60px; }
+/* under the review card it grows with the card (the time-out screen's
+   button, under the sign, keeps the size above) */
+.review .review-btn { gap: 18px; font-size: 52px; padding: 18px 72px; }
+.review .go-retry-icon svg { width: 60px; height: 60px; }
 
 /* intro (js/intro.js): route map, demo hand, skip curtain */
 .mission-map {
@@ -1071,23 +1088,55 @@ canvas.wash {
   position: absolute;
   left: 0;
   top: 0;
-  width: 118px;
+  width: 112px; /* = HAND_W in js/intro.js */
   z-index: 114;
   pointer-events: none !important;
   will-change: transform, opacity;
-  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 6px 8px rgba(26, 8, 48, 0.45));
 }
-.demo-hand svg { display: block; width: 100%; height: auto; }
+.demo-hand svg,
+.demo-spark svg { display: block; width: 100%; height: auto; }
+/* the press under the fingertip: a white ring round a soft light spot */
 .demo-ring {
   position: absolute;
   width: 80px;
   height: 80px;
   border-radius: 50%;
   border: 6px solid #fff;
+  background: rgba(255, 255, 255, 0.22);
+  z-index: 113;
+  pointer-events: none !important;
+}
+/* the tap strokes round the fingertip (js/intro.js SPARK_SVG) */
+.demo-spark {
+  position: absolute;
+  width: 120px;
+  height: 120px;
   z-index: 113;
   pointer-events: none !important;
 }
 .intro-curtain { position: absolute; inset: 0; background: #140a26; z-index: 111; pointer-events: none !important; }
+
+/* Full-screen covers.  The 16:9 stage is letterboxed on any other screen
+   (16:10, 4:3, 20:9); the scenery fills that strip, but a cover laid on
+   the stage box (inset: 0) left it uncovered - a bright band above and
+   below a popup.  These reach the screen's edges instead: the visible
+   stage + margin (--ov-*, set by fitStage in js/main.js, the box the
+   game-over shade uses).  That box is centred on the stage, so what is
+   centred inside it (panel, logo, play button, route map) stays put.
+   Fallback = the stage box, until fitStage has run. */
+#title.overlay.welcome,
+#loader.welcome-screen,
+.mission-map,
+.intro-curtain,
+.overlay.pause::before,
+.overlay.complete::before {
+  inset: auto;
+  left: var(--ov-l, 0px);
+  top: var(--ov-t, 0px);
+  width: var(--ov-w, 1920px);
+  height: var(--ov-h, 1080px);
+}
 /* the road pan's wall counter (intro step 2): the HUD's stage chip, bigger,
    top centre (centred by margins: its pop tween owns the transform) */
 .tour-count {
@@ -1123,17 +1172,18 @@ canvas.wash {
 .overlay.complete .btn { font-size: 44px; padding: 18px 70px; }
 
 /* game over (game.gameOver): the camera has pushed in on the boy and the
-   zombie; a dusk-purple shade, a soft burst of red rays behind the sign,
-   the GAME OVER sign; after a beat the sign and rays rise away and the
-   review card (.review-card) comes up on the shade.  Shade + rays cover the
-   same box as #vignette so 20:9 screens are covered too. */
+   zombie; the popup veil (blur + light lavender), a soft burst of red
+   rays behind the sign, the GAME OVER sign; after a beat the sign and
+   rays rise away and the review card (.review) comes up on the veil.
+   The shade covers the whole screen (--ov-*) so 20:9 screens are covered
+   too. */
 .go-shade {
   position: absolute;
   opacity: 0;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 48% 50% at 50% 42%, rgba(46, 12, 78, 0) 30%, rgba(22, 6, 44, 0.62) 100%) calc(-320px - var(--ov-l, -320px)) calc(-300px - var(--ov-t, -300px)) / 2560px 1700px no-repeat,
-    rgba(52, 18, 92, 0.48);
+  background: var(--veil);
+  -webkit-backdrop-filter: var(--veil-blur);
+  backdrop-filter: var(--veil-blur);
 }
 .go-rays {
   position: absolute;
@@ -1170,7 +1220,19 @@ canvas.wash {
   pointer-events: none;
   filter: drop-shadow(0 18px 22px rgba(12, 2, 26, 0.6));
 }
-/* (the review card's button icon) */
+/* after a time-out: no review, just the replay button - on the road below
+   the fallen boy and the zombie (the sign above them ends at ~700 px), so
+   the whole scene stays in view */
+.go-replay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 905px;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+}
+/* (the replay button's icon) */
 .go-retry-icon { display: flex; }
 .go-retry-icon svg { width: 52px; height: 52px; }
 

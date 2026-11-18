@@ -31,8 +31,8 @@ and a *wild card*, shuffled every time - so a guess has to judge both the
 type and the size.  Colour appears only as feedback.
 
 Arcs are drawn as a **thin line** on the circle (`geo.shape`, `ARC_R`), never
-as a band: in the glass a thin slot with the rim light along it and the rest
-of the circle as a faint outline, in flight a thin curved rod.  Sectors and
+as a band: in the glass a thin slot with the rim light along it (no outline
+on the rest of the circle), in flight a thin curved rod.  Sectors and
 segments stay cut-out regions.
 
 **Front-view camera** (`FrontScene.frame` + `shots` in `js/scene.js`): the
@@ -62,15 +62,20 @@ edges). The opening's light-yellow neon rim lights then fade up
 (`GlassMech.lightUp`; the glows are separate small svgs, so they never
 repaint the zoomed view).
 When an answer is picked, the rim flares and the shape pings outward
-(`GlassMech.pick`) and the camera pulls back to the `wide` shot: four closed
-**crates** stand on the road at the boy's feet (`Crates` in `js/scene.js`,
-drawn in code), named as the buttons in the same order, so the names must be
-read - the pieces stay hidden inside.  The tapped name's crate lights up, its
-lid pops, the piece hops out into the boy's hands as he bends for it
+(`GlassMech.pick`) and the camera pulls back to the `wide` shot: the boy's
+**bag** - one open backpack, no label (`Bag` in `js/scene.js`) - stands on the
+road at his right hand.  He bends to it, it squashes and springs back, and
+the piece rises out of its open top and hops into his hands
 (`FrontScene.pickUp`; there is no bend sheet - it is the throw sheet's first
 pose leaning, dipping and squashing, transform only), he straightens up and
 throws.  The camera follows the piece toward the wall (`impact`), and the
 view swings to the side at the window.
+The bag is only ever seen beside the boy.  In the side view it stands on the
+road just behind him while he fights at a wall, fades out as soon as he runs
+off and fades in again at the next wall (`SideScene.showBag`); there is none
+at the Safe Zone.  Its two views come from `boy/bag.png` (`build_bag()` in
+`tools/build-assets.py`, `--only bag`); it is sized from the boy, about a
+third of his height.
 
 * **Right piece** - it slips through the glass, the view switches to the
   side, the zombie is knocked out and the window opens while the piece's
@@ -91,18 +96,27 @@ view swings to the side at the window.
   the zombie looms.  The camera pushes in on the two of them, the view dims
   to purple, red rays open and the GAME OVER sign (`gameOverSign`, from
   `circle-game-art/images/gameover.png`) drops in.  After a beat it rises
-  away and the **Look again** review comes up (`ZD.ui.reviewCard`): the gap
-  that was needed and the piece that was thrown, side by side, and the
-  reason the gap is what it is (`reason*` keys).  Its button zooms back out
-  and plays the same wall again with a fresh zombie and a new opening of the
-  same piece (walls already cleared stay cleared).
+  away and the **Look again** review comes up (`ZD.ui.reviewCard`): a light
+  card with circles drawn the way the lesson draws them (circle-skill-1:
+  lavender disc, orange rim, pink centre, navy points; minor regions pink,
+  major violet; minor arcs blue, major violet).  The part that fitted the
+  gap (left) and the piece that was thrown (right) are explained in turn
+  (`reviewCircle`, one GSAP timeline): the two points land, the straight
+  edges draw (two radii / a chord / none for an arc), the part fills in,
+  then its name comes up with a green tick or red cross and its rule line
+  (`rule*` keys) is shown and read aloud.  A tap skips to the end.  Only
+  then does the Try again button come up, below the card; it zooms back
+  out and plays the same wall again with a fresh zombie and a new opening
+  of the same piece (walls already cleared stay cleared).
 * **Time out** - on timed walls the zombie climbs up behind the glass (the
   timer is its distance; the rim pulses red in the last 30%).  When it gets
-  there it bangs through: same as a wrong piece (the review shows the gap
-  only, "Time ran out!").
+  there it bangs through: same as a wrong piece, but no review - the GAME
+  OVER sign stays up and only the replay button (*Try again*) comes up
+  under it.
 * **Two chances per wall** (`CHANCES` in `js/game.js`).  A time-out counts
-  as a miss.  The first review's button is *Try again*, the second's *Show
-  me*: on the third go the wall has no timer and the game answers it itself -
+  as a miss.  Every game over's button is *Try again* (the retry arrow),
+  the second miss's too: on the third go the wall has no timer and the
+  game answers it itself -
   "The gap is a ...", the intro's demo hand taps the right name
   (`game.assistTap`), and the boy throws, knocks the zombie out and runs on
   as usual.
@@ -188,9 +202,11 @@ The script does:
   reference cards, component filtering of the noisy celebrate sheet),
 * repacks every animation into a uniform grid and records `cols/rows/frames`,
 * crops environment layers and measures each wall's circular opening
-  (`cx, cy, rx, ry`) so the glass mechanism is placed exactly; walls come
-  from `wall/image copy 2.png` (front) and `wall/image copy.png` (three turned
-  views; the side view uses the least turned), black backdrop and hole keyed
+  (`cx, cy, rx, ry`) so the glass mechanism is placed exactly; both walls
+  come from `wall/big-hole.png` (left: front view, right: the turned view the
+  side camera uses; `--only walls` rebuilds just them; colours graded to the
+  road's palette, `WALL_GRADE`, plus dusk light on the front wall,
+  `WALL_FRONT_DUSK` - no runtime CSS filter), black backdrop and hole keyed
   out, the outline closed so the rounded brick corners leave no see-through
   notches (filled with the art's mortar colour), and turned walls also
   record their base corners (`base.far/near`) so the side view stands them
@@ -203,7 +219,7 @@ The script does:
   game works from `file://`).
 
 `--only hero` / `--only zombie` rebuild just those sheets into the existing
-manifest.
+manifest (likewise `--only bag`, `timer`, `gameover`, `safezone`).
 
 ### Smooth sprite animation
 
@@ -331,9 +347,10 @@ the header of `js/i18n.js`) so the game still runs from `file://`.
 Read-aloud uses the same keys: `I18n.say(key)` plays `assets/VO/<lang>/<key>.webm`
 when the key is listed in `assets/VO/<lang>/manifest.json`, otherwise the
 browser speaks the text.  Spoken lines: the six piece names (`piece*`, on a
-hit), the six rules (`rule*`, on the walk through the window) and the six
-reasons (`reason*`, lesson card).  To ship recorded voice-overs, record those
-18 keys and list them in the manifest.
+hit) and the six rules (`rule*`, on the walk through the window).  The six
+`reason*` lines are no longer shown or spoken (the review card explains by
+animation) but are kept for a future narration.  To ship recorded
+voice-overs, record the 12 spoken keys and list them in the manifest.
 
 ## Audio
 
@@ -402,7 +419,9 @@ See PERFORMANCE_AUDIT.md.
    GSAP-tweened). Each one is an offscreen pass redone every frame. Put
    colour filters on the art inside the layer (`.art`); draw shapes as svg
    instead of `clip-path`. (`#grade`'s soft-light blend is the one kept on
-   purpose: it is the game's look; it costs two passes per frame.)
+   purpose: it is the game's look; it costs two passes per frame. The
+   popup veil's `backdrop-filter` blur - pause, level complete, game over -
+   is the other: only while a popup is up, sized to the visible screen.)
 5. **Never toggle `will-change`** on a view or the camera rig, and don't let
    an animation promote one - the layer tree is rebuilt and every tile
    re-painted. Never add it per tween either (`ZD.motion` doesn't): a

@@ -19,6 +19,7 @@ What it does
 Run:   python3 tools/build-assets.py        (needs Pillow, numpy, scipy)
        python3 tools/build-assets.py --only zombie   (zombie sheets only)
        python3 tools/build-assets.py --only timer    (timer meter art only)
+       python3 tools/build-assets.py --only walls    (wall art only)
 """
 import json
 import os
@@ -290,11 +291,7 @@ def build_layers():
 
     # side-view road: brick walkway with a visible top surface (rows 230-324)
     # and front face (to 500); trimmed to its content, mirror-tiled at runtime
-    road = stretch_alpha(load("land/image copy.png"), lo=20)[226:504]
-    # a lower road: keep the top surface, the cap row and the first 2 brick
-    # rows (to the mortar line at 203), then re-attach the dark bottom edge
-    # (mortar + shadow, rows 268-276) so it still ends cleanly
-    road = np.concatenate([road[:203], road[268:276]], axis=0)
+    road = _road_top()
     MANIFEST["images"]["roadTop"] = {"src": save(road, "bg/road-top.webp", 86), "w": road.shape[1], "h": road.shape[0]}
 
     for i in range(1, 8):
@@ -308,6 +305,7 @@ def build_layers():
     build_front_road()
     build_banner()
     build_profile()
+    build_bag()
     build_timer()
     build_welcome()
     build_start_button()
@@ -404,6 +402,36 @@ def build_profile():
     arr = load("boy/profile.png")[90:1110, 110:1130]
     arr = np.array(Image.fromarray(arr).resize((256, 256), Image.LANCZOS))
     MANIFEST["images"]["profile"] = {"src": save_opaque(arr, "ui/profile.webp", 90), "w": 256, "h": 256}
+
+
+def build_bag():
+    """The boy's bag of pieces (circle-game-art/images/boy/bag.png, transparent):
+    two views of one open backpack side by side, split at the empty columns
+    between them and cropped to their content.
+      bagBack  the back / front view - the open top facing up - stands on
+               the road at his right hand in the front view (FrontScene.bag);
+               the pieces come out of its mouth.  `mouth` = the opening's
+               centre as a fraction of the image (measured from the art).
+      bagSide  the side view (straps on its right) - stands on the road just
+               behind him at every wall in the side view.
+    ~2.5x their display height, so the front camera's push-ins stay sharp."""
+    arr = load("boy/bag.png")
+    cols = (arr[:, :, 3] > 20).any(axis=0)
+    xs = np.where(cols)[0]
+    # the widest run of empty columns inside the content splits the views
+    gaps = np.where(np.diff(xs) > 1)[0]
+    cut = gaps[np.argmax(np.diff(xs)[gaps])]
+    views = {"bagBack": arr[:, : xs[cut] + 1], "bagSide": arr[:, xs[cut + 1]:]}
+    sizes = {"bagBack": 330, "bagSide": 260}
+    files = {"bagBack": "props/bag-back.webp", "bagSide": "props/bag-side.webp"}
+    for key, part in views.items():
+        x0, y0, x1, y1 = bbox(part)
+        part = part[y0:y1, x0:x1]
+        h = sizes[key]
+        w = round(part.shape[1] * h / part.shape[0])
+        part = np.array(Image.fromarray(part).resize((w, h), Image.LANCZOS))
+        MANIFEST["images"][key] = {"src": save(part, files[key], 90), "w": w, "h": h}
+    MANIFEST["images"]["bagBack"]["mouth"] = {"x": 0.5, "y": 0.4}
 
 
 def build_timer():
@@ -614,20 +642,29 @@ def build_front_road():
     MANIFEST["images"]["frontFences"] = {"src": save(rgba, "bg/front-fences.webp", 84), "w": W, "h": fy1 - fy0, "y": fy0}
 
 
+def _road_top():
+    """The side-view road strip (also the colour reference for the walls)."""
+    road = stretch_alpha(load("land/image copy.png"), lo=20)[226:504]
+    # a lower road: keep the top surface, the cap row and the first 2 brick
+    # rows (to the mortar line at 203), then re-attach the dark bottom edge
+    # (mortar + shadow, rows 268-276) so it still ends cleanly
+    return np.concatenate([road[:203], road[268:276]], axis=0)
+
+
 # --------------------------------------------------------------------------- #
 # walls
 # --------------------------------------------------------------------------- #
 # Wall art (black backdrop, the see-through part of each hole is black too):
-#   wall/image copy 2.png  front view (flat face, round hole)
-#   wall/image copy.png    three turned views, least to most turned
-WALL_FRONT = "wall/image copy 2.png"
-WALL_ANGLES = "wall/image copy.png"
+#   wall/big-hole.png  one sheet, two views side by side (2026-11-17 art with
+#                      the larger circle): left = front view (flat face, round
+#                      hole), right = the turned view used by the side camera
+WALL_SHEET = "wall/big-hole.png"
 # Front opening (rim on the wall face) of each turned wall, in its cropped
 # webp px: centre, semi-axes, tilt (deg clockwise).  Direct ellipse fit
-# (Fitzgibbon) to the rim highlight (lower left), the face/tunnel boundary
-# (upper left) and the face's edge at the see-through part (right).  The side
-# view's glass fills this ellipse.  Re-fit if the wall art changes.
-WALL_RIMS = {"angle1": {"cx": 122.8, "cy": 285.1, "rx": 76.7, "ry": 130.9, "rot": 3.0}}
+# (Fitzgibbon) to the rim's outer edge (where the face meets the tunnel) and
+# the face's edge at the see-through part.  The side view's glass fills this
+# ellipse.  Re-fit if the wall art changes.
+WALL_RIMS = {"angle1": {"cx": 135.3, "cy": 295.8, "rx": 114.0, "ry": 158.8, "rot": 2.7}}
 
 
 def _disk(r):
@@ -665,6 +702,45 @@ def _wall_part(arr):
     return arr[by0:by1, bx0:bx1].copy()
 
 
+# How far the walls' colours move to the road's palette (0 = art as drawn).
+# The wall art is a redder, pinker orange (more blue in its mid-tones) than
+# the road it stands on, which is golden with wine-dark shadows; at 0.7 the
+# bricks read as the same art set, and the hole's edges keep their contrast.
+WALL_GRADE = 0.7
+
+
+def _match_palette(arr, ref, amount):
+    """Colour-grade arr towards ref: each channel's tone curve is mapped onto
+    ref's (histogram match over the opaque pixels), blended by `amount`.
+    Keeps the art's shading and edges, takes over the reference's hues."""
+    out = arr.copy()
+    m, mr = arr[:, :, 3] > 230, ref[:, :, 3] > 230
+    q = np.linspace(0, 100, 257)
+    for c in range(3):
+        sq = np.maximum.accumulate(np.percentile(arr[:, :, c][m], q) + np.arange(257) * 1e-4)
+        lut = np.interp(np.arange(256), sq, np.percentile(ref[:, :, c][mr], q))
+        out[:, :, c] = np.clip(arr[:, :, c] * (1 - amount) + lut[arr[:, :, c]] * amount, 0, 255).astype(np.uint8)
+    return out
+
+
+# The front view is lit for dusk (its road and fences are purple, warm only
+# in the highlights), so its wall also gets a soft lavender light: shadows and
+# mid-tones take the tint, bright bricks keep half their own colour, and the
+# glowing gap stays the brightest thing on the wall.  (tint RGB, how much the
+# brightest pixels keep, overall dim)
+WALL_FRONT_DUSK = ((195, 160, 215), 0.5, 0.92)
+
+
+def _dusk_light(arr, tint, keep_hi, dim):
+    rgb = arr[:, :, :3].astype(np.float32)
+    lum = np.clip((rgb @ np.array([0.2126, 0.7152, 0.0722], np.float32)) / 255.0, 0, 1)
+    w = (lum ** 1.4 * keep_hi)[:, :, None]
+    mul = np.array(tint, np.float32)[None, None, :] / 255.0 * (1 - w) + w
+    out = arr.copy()
+    out[:, :, :3] = np.clip(rgb * mul * dim, 0, 255).astype(np.uint8)
+    return out
+
+
 def _wall_base(arr, thresh=128):
     """Base corners of a turned wall, as drawn: far = bottom of its left
     (far) edge, near = its lowest point (the near bottom corner)."""
@@ -680,18 +756,22 @@ def _wall_base(arr, thresh=128):
 
 def build_walls():
     print("walls")
-    front = _wall_part(load(WALL_FRONT))
-    MANIFEST["walls"]["front"] = {"src": save(front, "wall/front.webp", 88), "w": front.shape[1], "h": front.shape[0], "hole": interior_hole(front)}
-    sheet = load(WALL_ANGLES)
+    sheet = load(WALL_SHEET)
     opaque = sheet[:, :, :3].max(axis=2) > 40
     cols = runs(opaque.sum(axis=0) > 5, min_len=60, merge_gap=8)
-    assert len(cols) == 3, cols
-    for name, (x0, x1) in zip(["angle1", "angle2", "angle3"], cols):
-        part = _wall_part(sheet[:, max(0, x0 - 6):x1 + 6].copy())
-        MANIFEST["walls"][name] = {"src": save(part, f"wall/{name}.webp", 88), "w": part.shape[1], "h": part.shape[0],
+    assert len(cols) == 2, cols
+    (f0, f1), (a0, a1) = cols
+    road = _road_top()
+    front = _match_palette(_wall_part(sheet[:, max(0, f0 - 6):f1 + 6].copy()), road, WALL_GRADE)
+    front = _dusk_light(front, *WALL_FRONT_DUSK)
+    MANIFEST["walls"]["front"] = {"src": save(front, "wall/front.webp", 88), "w": front.shape[1], "h": front.shape[0], "hole": interior_hole(front)}
+    part = _match_palette(_wall_part(sheet[:, max(0, a0 - 6):a1 + 6].copy()), road, WALL_GRADE)
+    MANIFEST["walls"]["angle1"] = {"src": save(part, "wall/angle1.webp", 88), "w": part.shape[1], "h": part.shape[0],
                                    "hole": interior_hole(part), "base": _wall_base(part)}
-        if name in WALL_RIMS:
-            MANIFEST["walls"][name]["rim"] = WALL_RIMS[name]
+    if "angle1" in WALL_RIMS:
+        MANIFEST["walls"]["angle1"]["rim"] = WALL_RIMS["angle1"]
+    for k, v in MANIFEST["walls"].items():
+        print(f"  {k} {v['w']}x{v['h']} hole {v['hole']}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1364,7 +1444,6 @@ def build_safe_zone():
 # downloads every manifest entry.  To use one again, delete it here.
 UNUSED = {
     "sprites": ["hero.backJump", "zombie.front.die", "zombie.front.dead", "zombie2.front.die", "zombie2.front.dead"],
-    "walls": ["angle2", "angle3"],
 }
 
 
@@ -1379,7 +1458,7 @@ def drop_unused():
 # --------------------------------------------------------------------------- #
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    only = {"zombie": lambda: build_zombie(), "hero": lambda: build_hero(), "timer": lambda: build_timer(), "gameover": lambda: build_gameover(), "safezone": lambda: build_safe_zone()}
+    only = {"zombie": lambda: build_zombie(), "hero": lambda: build_hero(), "timer": lambda: build_timer(), "gameover": lambda: build_gameover(), "safezone": lambda: build_safe_zone(), "bag": lambda: build_bag(), "walls": lambda: build_walls()}
     if sys.argv[1:2] == ["--only"] and sys.argv[2:3] and sys.argv[2] in only:
         # rebuild just these sheets into the existing manifest
         with open(OUT / "manifest.json") as f:

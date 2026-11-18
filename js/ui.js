@@ -19,55 +19,94 @@ window.ZD = window.ZD || {};
   }
 
   /* A circle for the review after a miss (ui.reviewCard), drawn the way
-     the game draws it (ZD.geo.shape: an arc is a thin line on the circle,
-     the rest of the circle a faint outline; a sector / segment a region):
-       kind 'gap'    the window: glass in a brick ring with the gap cut
-                     out and outlined in green (the right answer)
-       kind 'piece'  the piece that was thrown, pointing the way it flew,
-                     in a dashed ghost circle
-     Both mark the centre (sectors touch it, segments do not). */
-  let reviewUid = 0;
-  function reviewDiagram(spec, kind, size = 300) {
+     the lesson draws it (circle-skill-1): a lavender disc in an orange rim
+     with a pink centre, navy points where lines meet the rim; a minor
+     region pink, a major one violet; a minor arc sky blue, a major arc
+     violet - a thick line on the rim.
+     Returns { el, play }: play(tl, at) adds the circle's explanation to the
+     card's timeline at label `at` and returns how long it runs (ms):
+       1. the part's two points land on the rim
+       2. its straight edges draw - two radii from the centre for a sector,
+          a chord for a segment, none for an arc
+       3. the part itself fills in (an arc draws along the rim) as the rim
+          steps back */
+  const RV = {
+    disc: '#d3d1fa',
+    rim: '#fb640c',
+    edge: '#3e1a8c',
+    point: '#25209b',
+    centre: '#f51b88',
+    minor: { fill: '#ff8fa3', ink: '#d6245b', arc: '#38b6f5' },
+    major: { fill: '#b48cf2', ink: '#6a2bd6', arc: '#8a5cf0' },
+  };
+  function reviewCircle(spec, size = 400) {
+    const geo = ZD.geo;
+    const n = geo.normalize(spec);
     const h = size / 2;
-    const r = size * 0.4;
+    const r = h - 14; // room for the points and a thick arc on the rim
+    const tone = n.size === 'major' ? RV.major : RV.minor;
+    const f = (v) => Math.round(v * 100) / 100;
+    const p0 = geo.polar(0, 0, r, n.start);
+    const p1 = geo.polar(0, 0, r, n.start + n.sweep);
+    // a line that draws itself: dashed by its own length so the dash
+    // offset can run it in
+    const drawn = (d, len, attrs) => {
+      const L = f(len + 2);
+      return svg('path', Object.assign({ d, fill: 'none', 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': L }, attrs));
+    };
+    const edge = (a, b) => drawn(`M ${f(a.x)} ${f(a.y)} L ${f(b.x)} ${f(b.y)}`, Math.hypot(b.x - a.x, b.y - a.y), { stroke: RV.edge, 'stroke-width': 5, 'stroke-linecap': 'round' });
+    const dot = (p) => svg('circle', { cx: f(p.x), cy: f(p.y), r: 8, fill: RV.point, stroke: '#ffffff', 'stroke-width': 3 });
+
     const s = svg('svg', { viewBox: `${-h} ${-h} ${size} ${size}`, width: size, height: size, class: 'review-svg', 'aria-hidden': 'true' });
-    const sh = ZD.geo.shape(spec, 0, 0, r);
-    if (kind === 'gap') {
-      const id = 'rv' + ++reviewUid;
-      const hole = sh.line ? { d: sh.d, fill: 'none', stroke: 'black', 'stroke-width': 9, 'stroke-linecap': 'round' } : { d: sh.d, fill: 'black' };
-      // glass tinted like the game's window (GlassMech)
-      const glass = svg('radialGradient', { id: id + 'g', cx: '35%', cy: '30%', r: '80%' }, [
-        svg('stop', { offset: '0%', 'stop-color': '#b9e8ff', 'stop-opacity': '0.7' }),
-        svg('stop', { offset: '55%', 'stop-color': '#5aa3e6', 'stop-opacity': '0.6' }),
-        svg('stop', { offset: '100%', 'stop-color': '#2b2a7a', 'stop-opacity': '0.75' }),
-      ]);
-      s.append(
-        svg('defs', {}, [glass, svg('mask', { id }, [svg('rect', { x: -h, y: -h, width: size, height: size, fill: 'white' }), svg('path', hole)])]),
-        svg('circle', { r, fill: `url(#${id}g)`, mask: `url(#${id})` }),
-        // the brick ring of the window (a ring: the gap shows the dark beyond)
-        svg('circle', { r: r + 6, fill: 'none', stroke: '#5b2a0e', 'stroke-width': 16 }),
-        svg('circle', { r: r + 6, fill: 'none', stroke: '#d0652c', 'stroke-width': 9 })
-      );
-      if (sh.line) s.append(svg('circle', { r: sh.r, fill: 'none', stroke: '#ffffff', 'stroke-opacity': 0.55, 'stroke-width': 3 }));
-      s.append(svg('path', sh.line
-        ? { d: sh.d, fill: 'none', stroke: '#7cff8a', 'stroke-width': 7, 'stroke-linecap': 'round' }
-        : { d: sh.d, fill: 'rgba(20, 11, 44, 0.5)', stroke: '#7cff8a', 'stroke-width': 5, 'stroke-linejoin': 'round' }));
-    } else {
-      s.append(svg('circle', { r, fill: 'rgba(255, 255, 255, 0.06)', stroke: 'rgba(255, 255, 255, 0.5)', 'stroke-width': 3, 'stroke-dasharray': '8 8' }));
-      if (sh.line) {
-        s.append(svg('path', { d: sh.d, fill: 'none', stroke: '#7a2d12', 'stroke-width': 14, 'stroke-linecap': 'round' }));
-        s.append(svg('path', { d: sh.d, fill: 'none', stroke: '#ffb347', 'stroke-width': 8, 'stroke-linecap': 'round' }));
-      } else {
-        s.append(svg('path', { d: sh.d, fill: '#ffb347', stroke: '#7a2d12', 'stroke-width': 4, 'stroke-linejoin': 'round' }));
+    const rim = svg('circle', { r, fill: 'none', stroke: RV.rim, 'stroke-width': 5 });
+    const arc = n.type === 'arc';
+    const part = arc
+      ? drawn(geo.arcStroke(0, 0, r, n.start, n.sweep), (r * Math.PI * n.sweep) / 180, { stroke: tone.arc, 'stroke-width': 14, 'stroke-linecap': 'butt' })
+      : svg('path', { d: geo.piecePath(n, 0, 0, r), fill: tone.fill, stroke: tone.ink, 'stroke-width': 4, 'stroke-linejoin': 'round', opacity: 0 });
+    const O = { x: 0, y: 0 };
+    const edges = n.type === 'sector' ? [edge(O, p0), edge(O, p1)] : n.type === 'segment' ? [edge(p0, p1)] : [];
+    const dots = [dot(p0), dot(p1)];
+    s.append(
+      svg('circle', { r, fill: RV.disc }),
+      rim,
+      part,
+      ...edges,
+      svg('circle', { r: 7, fill: RV.centre, stroke: '#ffffff', 'stroke-width': 3 }),
+      ...dots
+    );
+
+    const play = (tl, at) => {
+      const t = (ms) => ZD.scene.D(ms) / 1000;
+      let o = 0; // ms after `at`
+      const pos = () => `${at}+=${t(o)}`;
+      // 1. the two points
+      tl.call(() => ZD.audio.play('pop'), null, pos());
+      tl.fromTo(dots, { opacity: 0, scale: 0, transformOrigin: '50% 50%' }, { opacity: 1, scale: 1, duration: t(300), ease: M.EASE.POP, stagger: t(110) }, pos());
+      o += 460;
+      // 2. the straight edges (the two radii together)
+      if (edges.length) {
+        tl.to(edges, { strokeDashoffset: 0, duration: t(560), ease: M.PHYS.DECEL }, pos());
+        o += 640;
       }
-    }
-    s.append(svg('circle', { r: 5.5, fill: '#ffffff', stroke: '#2a123f', 'stroke-width': 2 }));
-    return s;
+      // 3. the part, as the rim steps back
+      tl.to(rim, { opacity: 0.6, duration: t(500), ease: M.EASE.OUT }, pos());
+      if (arc) {
+        tl.to(part, { strokeDashoffset: 0, duration: t(820), ease: M.PHYS.DECEL }, pos());
+        o += 820;
+      } else {
+        tl.to(part, { opacity: 1, duration: t(500), ease: M.EASE.OUT }, pos());
+        o += 500;
+      }
+      return o;
+    };
+    return { el: s, play };
   }
+
+  const CHECK_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path d="M7 12.4l3.3 3.3L17.2 8.8" fill="none" stroke="#2f9c45" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CROSS_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/><path d="M8.2 8.2l7.6 7.6M15.8 8.2l-7.6 7.6" fill="none" stroke="#d61f44" stroke-width="2.8" stroke-linecap="round"/></svg>';
 
   const ui = {
     pieceThumb,
-    reviewDiagram,
     answerBtns: null,
     init(root) {
       this.root = root;
@@ -122,8 +161,7 @@ window.ZD = window.ZD || {};
        chosen by rule (ZD.geo.options: the right one, its size twin, a type
        twin and a wild card) in random order, so neither the set nor the
        position gives the answer away.  Buttons carry only the piece id;
-       `order` keeps their top-to-bottom order (the crates on the floor
-       of the front view line up the same way). */
+       `order` keeps their top-to-bottom order. */
     _buildPanel() {
       const box = this.optionsEl;
       box.innerHTML = '';
@@ -530,43 +568,107 @@ window.ZD = window.ZD || {};
       });
     },
 
+    /* The game-over screen's replay button: the retry arrow + `label`
+       (Try again, after every miss).  The review ends on it, under the
+       card; after a time-out it comes up on its own under the sign. */
+    replayButton(label) {
+      return el('button', { class: 'btn primary review-btn' }, [
+        el('span', { class: 'go-retry-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v5h-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+        el('span', { text: label }),
+      ]);
+    },
+
     /* "Look again" - the review after a miss (LXD P8), shown on the
        game-over screen once the sign has made way.  target: the gap's spec;
        chosen: the tapped piece id, or null when time ran out; thrown: the
-       chosen piece as it flew (game.wrongPiece).  Two circles side by side
-       - the gap that was needed and the piece that was picked - and the
-       reason the gap is what it is (two sentences, read aloud).  The
-       button carries on (Try again, or after the second miss Show me).
-       Returns { el, button, done } - done resolves on the tap. */
+       chosen piece as it flew (game.wrongPiece).  A game panel with the
+       circles drawn the way the lesson (circle-skill-1) draws them: the part that fitted
+       the gap (left, a green tick) and the piece that was picked (right, a
+       red cross), each explained in turn on its circle (reviewCircle: its
+       points, its straight edges, then the part fills in), then named, with
+       its one-line rule under it, read aloud.  The other circle is dimmed
+       meanwhile; at the end both are lit.  Only then does the Try again
+       button come up - below the card, outside it.  A tap on the card skips
+       to the end of the explanation.
+       Returns { el, button, explain, done }: explain() plays the
+       explanation (call it once the card is on screen) and resolves as the
+       button shows; done resolves on the button's tap. */
     reviewCard({ target, chosen, thrown, button }) {
       const geo = ZD.geo;
-      const chip = chosen
-        ? el('div', { class: 'lesson-chip wrong' }, [el('span', { class: 'ico', text: '✖' }), el('span', { text: T('lessonYouChose', { name: T(geo.labelKey(chosen)) }) })])
-        : el('div', { class: 'lesson-chip time' }, [el('span', { class: 'ico', text: '⏱' }), el('span', { text: T('reviewTimeUp') })]);
-      const item = (svgEl, caption, name, cls) => el('div', { class: 'review-item ' + cls }, [
-        svgEl,
-        el('div', { class: 'review-caption', text: T(caption) }),
-        el('div', { class: 'review-name', text: T(geo.labelKey(name)) }),
-      ]);
-      const pair = el('div', { class: 'review-pair' }, [item(reviewDiagram(target, 'gap'), 'reviewGap', target.id, 'needed')]);
-      if (chosen && thrown) pair.appendChild(item(reviewDiagram(thrown, 'piece'), 'reviewYours', chosen, 'chosen'));
-      const btn = el('button', { class: 'btn primary review-btn' }, [
-        el('span', { class: 'go-retry-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v5h-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
-        el('span', { text: button }),
-      ]);
+      const hidden = { opacity: 0 };
+      const item = (spec, id, right, i) => {
+        const c = reviewCircle(spec);
+        const chip = el('div', { class: 'review-chip ' + (right ? 'right' : 'wrong'), style: hidden }, [
+          el('span', { class: 'review-chip-ico', 'aria-hidden': 'true', html: right ? CHECK_ICON : CROSS_ICON }),
+          el('span', { text: T(geo.labelKey(id)) }),
+        ]);
+        const key = geo.ruleKey(id);
+        const rule = el('p', { class: 'review-rule', text: T(key), style: hidden });
+        // (the second circle waits dimmed for its turn)
+        const node = el('div', { class: 'review-item ' + (right ? 'needed' : 'chosen'), style: i ? { opacity: 0.35 } : {} }, [c.el, chip, rule]);
+        return { el: node, chip, rule, key, play: c.play };
+      };
+      const parts = [item(target, geo.idOf(target), true, 0)];
+      if (chosen && thrown) parts.push(item(thrown, chosen, false, 1));
+      // no title on the card (the circles say it); reviewTitle still names
+      // the dialog for a screen reader
       const card = el('div', { class: 'review-card', role: 'dialog', 'aria-label': T('reviewTitle') }, [
-        el('h2', { class: 'review-title', text: T('reviewTitle') }),
-        chip,
-        pair,
-        el('p', { class: 'review-reason', text: T(geo.reasonKey(target)) }),
-        el('div', { class: 'btn-row' }, [btn]),
+        el('div', { class: 'review-pair' }, parts.map((p) => p.el)),
       ]);
+      const btn = ui.replayButton(button);
+      // below the card; it keeps its place (no jump) but stays hidden until
+      // the explanation has ended
+      const row = el('div', { class: 'review-actions waiting' }, [btn]);
+      const wrap = el('div', { class: 'review' }, [card, row]);
+
+      let tl = null;
+      const explain = () => new Promise((res) => {
+        const t = (ms) => ZD.scene.D(ms) / 1000;
+        const fade = (targets, opacity, at) => tl.to(targets, { opacity, duration: M.DUR.SLOW, ease: M.EASE.OUT }, at);
+        let shown = false;
+        const finish = () => {
+          if (shown) return;
+          shown = true;
+          card.removeEventListener('pointerdown', skip);
+          row.classList.remove('waiting');
+          ZD.audio.play('pop');
+          M.pop(btn, { y: 18, scale: 0.85 }).then(() => M.clear(btn)); // (inline transform would block :hover / :active)
+          res();
+        };
+        const skip = () => {
+          tl.progress(1, true); // to the last frame, no sounds on the way
+          I18n.stop();
+          finish();
+        };
+        // built now the card is on screen (the SVG origins need layout)
+        tl = M.timeline({ paused: true, onComplete: finish });
+        parts.forEach((p, i) => {
+          const at = 'part' + i;
+          // the next circle starts once the line before it has been read
+          tl.addLabel(at, i ? `+=${t(1900)}` : t(300));
+          if (i) {
+            fade(parts.filter((q) => q !== p).map((q) => q.el), 0.35, at);
+            fade(p.el, 1, at);
+          }
+          const after = `${at}+=${t(p.play(tl, at) + 150)}`;
+          // named, then its rule, read aloud
+          tl.fromTo(p.chip, { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: t(320), ease: M.EASE.POP, immediateRender: false }, after);
+          tl.call(() => I18n.say(p.key), null, after);
+          tl.fromTo(p.rule, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: t(380), ease: M.EASE.OUT, immediateRender: false }, `${after}+=${t(140)}`);
+        });
+        // both lit side by side, a beat to compare, then the button
+        if (parts.length > 1) fade(parts.map((p) => p.el), 1, `+=${t(500)}`);
+        tl.to({}, { duration: t(1300) });
+        card.addEventListener('pointerdown', skip);
+        tl.play();
+      });
       const done = new Promise((res) => btn.addEventListener('click', () => {
         ZD.audio.play('click');
         I18n.stop();
+        if (tl) tl.kill();
         res();
       }, { once: true }));
-      return { el: card, button: btn, done };
+      return { el: wrap, button: btn, explain, done };
     },
 
     /* Pause menu: just the title and Resume.  Sound is switched from the

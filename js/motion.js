@@ -169,6 +169,11 @@ window.ZD = window.ZD || {};
     to: (targets, vars) => gsap.to(targets, prep(targets, vars)),
     fromTo: (targets, from, vars) => gsap.fromTo(targets, from, prep(targets, vars, from)),
     set: (targets, vars) => gsap.set(targets, vars),
+    /* One timeline per concept explanation (the skill's rule 5) - e.g. the
+       review card's animated "why" (ZD.ui.reviewCard).  Its tweens move SVG
+       lines and shapes, so it needs none of prep()'s transition holds.
+       Top-level like any tween: freeze / thaw / stopAll reach it. */
+    timeline: (vars) => gsap.timeline(vars),
     /* stop every tween on `targets` where it is (its promise never settles) */
     stop: (targets) => gsap.killTweensOf(targets),
     /* drop the inline styles GSAP wrote (the stylesheet takes over again) */

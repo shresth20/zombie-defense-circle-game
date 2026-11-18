@@ -67,8 +67,9 @@ window.ZD = window.ZD || {};
 
   /* Arcs are drawn as a LINE on the circle, not as a band (LXD: a band
      looks like a region).  The line runs this far out (fraction of r), just
-     inside the window's brick rim; the rest of the circle is shown as a
-     faint outline at the same radius. */
+     inside the window's brick rim.  Only the arc itself is lit; the rest
+     of the circle has no outline (removed 2026-11-18 - it read as a stray
+     unlit line). */
   const ARC_R = 0.955;
 
   function normalize(spec) {
@@ -136,7 +137,8 @@ window.ZD = window.ZD || {};
          rule*   one-line rule, repeated on the walk to the next wall */
     labelKey: (p) => I18n.key('piece', pieceId(p)),
     ruleKey: (p) => I18n.key('rule', pieceId(p)),
-    /* why a gap is that piece (two short sentences) - the review after a miss */
+    /* why a gap is that piece (two short sentences) - not shown now (the
+       review card explains by animation); kept for a future narration */
     reasonKey: (p) => I18n.key('reason', pieceId(p)),
     /* Correctness is decided from data, never from pixels. */
     matches: (a, b) => pieceId(a) === pieceId(b),

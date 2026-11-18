@@ -22,11 +22,11 @@ function fitStage() {
   }
   const root = document.documentElement.style;
   root.setProperty('--s', s);
-  /* The game-over shade (.go-shade) only covers what this screen shows of
-     the stage (+ a margin for fx.shake), inside its design box 2560 x 1700
-     at (-320, -300).  Its gradient stays laid out on the design box (CSS),
-     so the look is the same - the GPU just stops rasterising and blending
-     off-screen area.  (The other full-screen gradients are small canvases:
+  /* The screen-filling covers (popup veils, the game-over shade, the
+     welcome screen - "Full-screen covers" in the CSS) only cover what this
+     screen shows of the stage (+ a margin for fx.shake), inside its design
+     box 2560 x 1700 at (-320, -300) - the GPU never blurs or blends
+     off-screen area.  (The full-screen gradients are small canvases:
      paintWashes in js/scene.js.) */
   const M = 24;
   const l = Math.max(-320, Math.floor(960 - window.innerWidth / (2 * s)) - M);
