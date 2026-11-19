@@ -191,6 +191,8 @@ assets/
   build/                   GENERATED game-ready WebP + manifest (do not edit)
   fonts/                   Lilita One, Nunito (OFL)
 tools/build-assets.py      raw art (../circle-game-art/images) → assets/build (Pillow, numpy, scipy)
+tools/shrink-assets.py     run after build-assets.py: re-samples sprites (80%) and
+                           backdrops (85%), re-encodes all WebP (q72) - keeps the game < 8 MB
 tools/sprite_stabilizer.py frame-by-frame registration of AI-drawn sprite sheets
 tools/sprite-qa.py         smoothness check of the built sheets (jitter, slide, seams)
 tools/perf-lab.cjs         GPU rendering lab: missing tiles, dropped frames, offscreen
@@ -202,6 +204,9 @@ tools/perf-lab.cjs         GPU rendering lab: missing tiles, dropped frames, off
 `python3 tools/build-assets.py` rebuilds `assets/build/`. The raw PNG art (~134 MB)
 is **not** part of the game: it lives in `../circle-game-art/images/` next to this
 repo (or wherever `CIRCLE_ART` points), so the shipped folder stays small.
+After every rebuild run `python3 tools/shrink-assets.py`: it cuts `assets/build/`
+from ~10.5 MB to ~4.9 MB (the manifest stays as is - the runtime draws every image
+at the manifest's CSS size, so smaller files land in the same place).
 The script does:
 
 * cleans sprite alpha (haze/halo removal, white-keying of the zombie
