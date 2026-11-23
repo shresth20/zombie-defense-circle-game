@@ -3,10 +3,31 @@
    which is the welcome screen - shows at its final size from the first frame. */
 let paintedScale = 0; // the stage scale the GPU layers were painted at
 let repaintTimer = 0;
+/* WebKit (Safari, and every browser on iPhone / iPad - they all use it)
+   paints each layer at its own CSS size x the screen's pixel ratio and does
+   NOT count an ancestor's scale() shrink.  Under a scale(0.36) stage on a 3x
+   iPhone that is ~7x the pixels shown: measured 2.1 GB of GPU memory at the
+   welcome screen and 3.1 GB in the intro, far over what iOS allows one tab,
+   so iOS killed the page and the browser reloaded it, again and again.
+   There the stage is shrunk with `zoom` instead: layout itself is at screen
+   size, so every layer is painted at the size it is shown (same test:
+   0.45 GB welcome, 0.6 GB intro peak, 0.3 GB settled - 5x less).  Its
+   own lengths (left/top/width) are zoomed too, hence the divided offsets;
+   the identity transform keeps #stage a stacking context and containing
+   block, as with scale().  Other engines keep scale(): Chrome's paint scale
+   is tuned for it (see "Paint scale" in css/style.css).
+   An engine trait, not a capability, so it is read from navigator.vendor
+   ('Apple Computer, Inc.' in every WebKit browser, iOS Chrome included). */
+const ZOOM_STAGE = /Apple/.test(navigator.vendor || '');
 function fitStage() {
   const stage = document.getElementById('stage');
   const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-  stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+  if (ZOOM_STAGE) {
+    stage.style.zoom = s;
+    stage.style.left = `${(window.innerWidth / s - 1920) / 2}px`;
+    stage.style.top = `${(window.innerHeight / s - 1080) / 2}px`;
+    stage.style.transform = 'translate(0px, 0px)';
+  } else stage.style.transform = `translate(-50%, -50%) scale(${s})`;
   /* The camera rig, the sprites and other small movers keep will-change:
      transform, and Chrome keeps such a layer at the scale it was first painted at:
      after the window grows (or a tablet turns) the game would stay blurred,
