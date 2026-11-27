@@ -15,7 +15,30 @@ python3 -m http.server 8080        # then open http://localhost:8080
 ```
 
 Everything is local (fonts, GSAP, generated WebP art) so it works offline
-once loaded. Best on a landscape tablet; it scales to any 16:9 → 20:9 screen.
+once loaded.
+
+### Screens
+
+Landscape on any phone, tablet or desktop, 5:4 to 21:9 (`fitStage` in
+`js/main.js`).  The game is designed on a 1920 x 1080 stage:
+
+* **Always whole.** The stage is scaled to fit, so the wall, the answers,
+  the instruction bar and every card are fully on screen.
+* **No bare edges.** The stage sits on the screen's bottom edge, centred
+  across.  The scenery runs past the stage on every side: a 16:10 or 4:3
+  screen shows more sky above (the art ends at the ground, so nothing is
+  ever cut off below), a 20:9 phone more of the road to the sides.  A
+  screen wider than the scenery (a phone with its browser bar, 21:9) is
+  scaled up until the art covers it, cropping at most 90 px of sky.
+* **UI on the screen's edges.** The HUD, timer, bar and RUN / JUMP anchor
+  to the visible area inside the device's safe area (notch, home bar) -
+  CSS `--vis-*` - and the popups centre on the screen.  On phones (stage
+  under 0.45x) the corner controls grow (`#stage.compact`).
+* **Portrait.** A phone or tablet held upright is asked to turn it; a tall
+  desktop window keeps the game, with more sky.
+* **Safari / iOS** draws the stage with CSS `zoom` instead of `scale()`
+  (see the comment on `ZOOM_STAGE`): WebKit paints layers at full screen
+  resolution under a scaled ancestor, which ran iPhones out of memory.
 
 ## How a wall plays out
 

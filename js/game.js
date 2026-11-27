@@ -1278,8 +1278,13 @@ window.ZD = window.ZD || {};
       const bx = side.hero.x - 120;
       const by = side.hero.y - 35;
       // Drift only as far as the oversized scenery safely covers.  This
-      // moves attention toward the action without exposing a scene edge.
-      const tx = Math.max(-DEFEAT_SHIFT.x, Math.min(DEFEAT_SHIFT.x, DEFEAT_FOCUS.x - bx));
+      // moves attention toward the action without exposing a scene edge:
+      // on a screen wider than 16:9 (ZD.view, set by fitStage) the
+      // scenery's edge (x -320 / 2240) is nearer, so the room is less.
+      const shown = ZD.view || { l: 0, r: 1920 };
+      const maxR = Math.min(DEFEAT_SHIFT.x, Math.max(0, shown.l + 320 - 8));
+      const maxL = Math.min(DEFEAT_SHIFT.x, Math.max(0, 2240 - shown.r - 8));
+      const tx = Math.max(-maxL, Math.min(maxR, DEFEAT_FOCUS.x - bx));
       const ty = Math.max(-DEFEAT_SHIFT.y, Math.min(DEFEAT_SHIFT.y, DEFEAT_FOCUS.y - by));
       this.clearDefeatCam();
       const v = side.el;

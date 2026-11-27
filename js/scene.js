@@ -60,10 +60,12 @@ window.ZD = window.ZD || {};
      camera moves the side view up to 90 px), a shake or a screen taller
      than 16:9 showed the bare page above it: a band of another colour
      along the top.  The art's top rows are one flat colour (.sky-cap in
-     the CSS), so a block of it carries the sky on upward - enough for a
-     4:3 screen plus the drift and a shake. */
+     the CSS), so a block of it carries the sky on upward.  The stage sits
+     on the screen's bottom edge (fitStage in js/main.js), so a screen
+     taller than 16:9 shows all of its extra height up here: up to y -1300
+     covers a 5:4 desktop and a window down to ~0.85:1, plus the drift. */
   const SKY_Y = -60;
-  const SKY_CAP = 300;
+  const SKY_CAP = 1240;
   const skyCap = () => el('div', { class: 'sky-cap', 'aria-hidden': 'true', style: { left: WORLD_X + 'px', top: SKY_Y - SKY_CAP + 'px', width: WORLD_W + 'px', height: SKY_CAP + 1 + 'px' } });
 
   /* A few separate small clouds (cut out by the build) instead of a tiled
@@ -148,7 +150,7 @@ window.ZD = window.ZD || {};
      wrapped every period so parallax is seamless.
      mirror: alternate tiles are flipped so the seam is pixel-continuous
      (used for silhouettes, fences and bricks; never for the sky's sun). */
-  function tiledLayer(key, { y, h, z, factor = 0, cls = '', opacity = 1, scale, bg, mirror = false }) {
+  function tiledLayer(key, { y, h, z, factor = 0, cls = '', opacity = 1, scale, bg, mirror = false, repeatY = false }) {
     const img = A.image(key);
     const sc = scale || (img.w > 2000 ? S_FENCE : S_WIDE);
     const tileW = Math.round(img.w * sc);
@@ -183,7 +185,7 @@ window.ZD = window.ZD || {};
             backgroundSize: `${tileW}px ${tileH}px`,
             // flipped tiles anchor right so the flip puts the art flush left
             backgroundPosition: mirror && i % 2 ? 'right top' : 'left top',
-            backgroundRepeat: 'repeat-x', // fill the 1px overlap column
+            backgroundRepeat: repeatY ? 'repeat' : 'repeat-x', // fill the 1px overlap column (repeatY: a layer taller than its tile)
             transform: mirror && i % 2 ? 'scaleX(-1)' : '',
           },
         })
@@ -1253,8 +1255,14 @@ window.ZD = window.ZD || {};
          zooms and pans (Camera.to still swings the whole view).  The focus
          vignette sits outside the rig, so it stays put on screen and leaves
          with the view. */
+      /* The rig clips to the scenery's own box (.cam-rig in the CSS), not to
+         the 16:9 stage, so a wider or taller screen sees the art run on to
+         its edges in every shot.  Its .cam-stage child is the stage box
+         again: everything inside keeps its stage px. */
       this.rig = el('div', { class: 'cam-rig' });
-      while (this.el.firstChild) this.rig.appendChild(this.el.firstChild);
+      const box = el('div', { class: 'cam-stage' });
+      while (this.el.firstChild) box.appendChild(this.el.firstChild);
+      this.rig.appendChild(box);
       this.focusVig = el('canvas', { class: 'wash focus-vignette' });
       this.el.append(this.rig, this.focusVig);
       /* Shots: zoom `s`, framing the window centre at screen point `on`;
@@ -1269,18 +1277,22 @@ window.ZD = window.ZD || {};
            impact  the piece is in the air: the camera rides with it */
       const H = this.hole;
       const onFocus = { x: H.x - 70, y: H.y + 34 };
-      const ENTER = 0.92; // about the stage centre, like the old view zoom
+      // zoomed out about the stage's bottom centre, so the ground stays on
+      // the screen's bottom edge (about the centre, a strip under the
+      // ground showed); never further out than the scenery covers the
+      // screen (see _shotState)
+      const ENTER = 0.92;
       this.shots = {
-        enter: { s: ENTER, on: { x: 960 + (H.x - 960) * ENTER, y: 540 + (H.y - 540) * ENTER }, vig: 0 },
+        enter: { s: ENTER, about: { x: 960, y: 1080 }, vig: 0 },
         wide: { s: 1, on: { x: H.x, y: H.y }, vig: 0 },
         focus: { s: 1.2, on: onFocus, vig: 1 },
         lock: { s: 1.3, on: onFocus, vig: 1 },
         impact: { s: 1.12, on: { x: H.x, y: H.y }, vig: 0.55 },
       };
       // vignette centred on the window as framed while focused (a small
-      // canvas, see paintWash; #world-sized box: 2560 x 1700 from
-      // (-320, -300), as #vignette)
-      paintWash(this.focusVig, (ctx, w, h) => radialWash(ctx, w, h, { cx: onFocus.x + 320, cy: onFocus.y + 300, rx: 820, ry: 600, stops: [[0.42, [14, 4, 34, 0]], [1, [14, 4, 34, 0.62]]] }));
+      // canvas, see paintWash; the washes' box: 2560 x 2700 from
+      // (-320, -1300), as #vignette)
+      paintWash(this.focusVig, (ctx, w, h) => radialWash(ctx, w, h, { cx: onFocus.x + 320, cy: onFocus.y + 1300, rx: 820, ry: 600, stops: [[0.42, [14, 4, 34, 0]], [1, [14, 4, 34, 0.62]]] }));
       this.cam = this._shotState('wide');
       this._camTween = null; // running camera move (GSAP)
       this._camDone = null;
@@ -1349,6 +1361,15 @@ window.ZD = window.ZD || {};
 
     _shotState(name) {
       const sh = this.shots[name];
+      if (sh.about) {
+        // a zoom about a fixed screen point; zoomed out (s < 1) the
+        // scenery (x -320..2240, sky to y -1300) must still cover what
+        // this screen shows (ZD.view, set by fitStage)
+        const v = ZD.view || { l: 0, r: STAGE_W, t: 0 };
+        const s = Math.max(sh.s, Math.min(1, Math.max((v.r - v.l) / WORLD_W, (STAGE_H - v.t) / (STAGE_H - SKY_Y + SKY_CAP))));
+        const on = { x: sh.about.x + (this.hole.x - sh.about.x) * s, y: sh.about.y + (this.hole.y - sh.about.y) * s };
+        return { s, x: on.x - s * this.hole.x, y: on.y - s * this.hole.y, vig: sh.vig };
+      }
       return { s: sh.s, x: sh.on.x - sh.s * this.hole.x, y: sh.on.y - sh.s * this.hole.y, vig: sh.vig };
     }
 
@@ -1656,9 +1677,12 @@ window.ZD = window.ZD || {};
       this.road = ROAD;
       this.groundY = 770;
       // dirt verge below the (lower) road; drawn first so the road's
-      // shadowed bottom edge overlaps it
+      // shadowed bottom edge overlaps it.  It runs 120 px past the stage's
+      // bottom (the screen's bottom edge): a shake or the game-over drift
+      // never shows a bare strip under it.  The tile is mirrored both ways
+      // by the build, so it repeats down seamlessly.
       ROAD.bottom = ROAD.y + Math.round(A.image('roadTop').h * ROAD.scale);
-      L(tiledLayer('dirt', { y: ROAD.bottom - 14, z: 8, factor: 1, h: 1080 - ROAD.bottom + 14, scale: 0.55, mirror: true }));
+      L(tiledLayer('dirt', { y: ROAD.bottom - 14, z: 8, factor: 1, h: 1200 - ROAD.bottom + 14, scale: 0.55, mirror: true, repeatY: true }));
       L(tiledLayer('roadTop', { y: ROAD.y, z: 8, factor: 1, scale: ROAD.scale, mirror: true }));
       /* The land's props, generated endlessly from the distance run (see
          Scatter): distant trees and watchtowers seen through the fence, big
@@ -2310,7 +2334,13 @@ window.ZD = window.ZD || {};
      whole game (#grade and #vignette ~23 MB each on a 1920x1200 tablet,
      measured) - a third of a budget tablet's tile memory gone before any
      scenery was drawn. */
-  const WASH = { w: 2560, h: 1700, k: 0.2 }; // design box (stage px, from -320, -300)
+  /* Design box of the full-screen washes (stage px, from -320, -1300 - the
+     sky over a tall screen, see SKY_CAP).  Each gradient keeps its old
+     place over the band from y -300 (BAND_Y in box px) to the box's
+     bottom (y 1400); above it the gradient's first colour runs on. */
+  const WASH = { w: 2560, h: 2700, k: 0.2 };
+  const BAND_Y = 1000;
+  const BAND_H = 1700;
 
   /* colour stops [[offset 0..1, [r, g, b, a]], ...] -> a canvas gradient
      that looks like the CSS one: CSS mixes stops with premultiplied alpha,
@@ -2364,16 +2394,18 @@ window.ZD = window.ZD || {};
     // unifies every asset under the sunset
     const grade = document.getElementById('grade');
     if (grade) paintWash(grade, (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 0, H);
+      const g = ctx.createLinearGradient(0, BAND_Y, 0, BAND_Y + BAND_H);
       cssStops(g, [[0, [70, 20, 150, 0.55]], [0.45, [255, 80, 160, 0.25]], [1, [255, 150, 60, 0.4]]]);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
     });
+    // (both ellipses sized as CSS farthest-corner sizes them over the band)
+    const far = (cx, cy) => ({ rx: Math.max(cx, W - cx) * Math.SQRT2, ry: Math.max(cy, BAND_H - cy) * Math.SQRT2 });
     const vig = document.getElementById('vignette');
-    if (vig) paintWash(vig, (ctx) => radialWash(ctx, W, H, { cx: W * 0.5, cy: H * 0.45, stops: [[0.55, [0, 0, 0, 0]], [1, [20, 5, 40, 0.5]]] }));
+    if (vig) paintWash(vig, (ctx) => radialWash(ctx, W, H, { cx: W * 0.5, cy: BAND_Y + BAND_H * 0.45, ...far(W * 0.5, BAND_H * 0.45), stops: [[0.55, [0, 0, 0, 0]], [1, [20, 5, 40, 0.5]]] }));
     // the alarm's red light (it pulses: CSS animation on this canvas)
     const alarm = document.querySelector('#alarm-light .alarm-pulse');
-    if (alarm) paintWash(alarm, (ctx) => radialWash(ctx, W, H, { cx: W * 0.15, cy: H * 0.25, stops: [[0, [255, 50, 80, 0.55]], [0.4, [255, 50, 80, 0.15]], [0.7, [255, 0, 60, 0]]] }));
+    if (alarm) paintWash(alarm, (ctx) => radialWash(ctx, W, H, { cx: W * 0.15, cy: BAND_Y + BAND_H * 0.25, ...far(W * 0.15, BAND_H * 0.25), stops: [[0, [255, 50, 80, 0.55]], [0.4, [255, 50, 80, 0.15]], [0.7, [255, 0, 60, 0]]] }));
     // the page behind the stage (seen only where the screen is wider /
     // taller than the scenery): drawn over a unit box, stretched to #app,
     // which is what a CSS ellipse sized to its box does

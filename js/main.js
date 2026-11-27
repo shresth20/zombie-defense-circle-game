@@ -19,15 +19,63 @@ let repaintTimer = 0;
    An engine trait, not a capability, so it is read from navigator.vendor
    ('Apple Computer, Inc.' in every WebKit browser, iOS Chrome included). */
 const ZOOM_STAGE = /Apple/.test(navigator.vendor || '');
+/* Fitting any landscape screen - phone, tablet, desktop, 4:3 to 21:9 -
+   with every part of the game on screen and no bare edge:
+   - the whole 1920 x 1080 stage fits (contain), so the wall, the answers,
+     the bar and every card are always fully visible;
+   - it sits on the screen's BOTTOM edge, centred across.  The art ends at
+     the ground (y 1080), so a taller screen (16:10, 4:3) shows more sky
+     above it - the sky runs on upward (SKY_CAP in js/scene.js) - never a
+     cut-off ground below;
+   - the scenery is COVER_W wide (2560 less the view swing's drift): a
+     screen wider than that (a phone with its browser bar, 21:9) is scaled
+     up until the scenery covers it, cropping at most CROP_MAX px of sky
+     off the stage's top;
+   - the HUD, bar, buttons and popups anchor to the VISIBLE area inside the
+     device's safe area (notch, rounded corners, home bar): --vis-* below. */
+const COVER_W = 2464;
+const CROP_MAX = 90;
+/* the device's safe-area insets (CSS px), read from a probe styled with env() */
+let safeProbe = null;
+function safeInsets() {
+  if (!safeProbe) {
+    safeProbe = document.createElement('div');
+    safeProbe.setAttribute('aria-hidden', 'true');
+    Object.assign(safeProbe.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      width: '0',
+      height: '0',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      padding: 'env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)',
+    });
+    document.body.appendChild(safeProbe);
+  }
+  const cs = getComputedStyle(safeProbe);
+  const px = (v) => parseFloat(v) || 0;
+  return { t: px(cs.paddingTop), r: px(cs.paddingRight), b: px(cs.paddingBottom), l: px(cs.paddingLeft) };
+}
 function fitStage() {
   const stage = document.getElementById('stage');
-  const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  let s = Math.min(W / 1920, H / 1080);
+  s = Math.max(s, Math.min(W / COVER_W, H / (1080 - CROP_MAX)));
+  const x0 = (W - 1920 * s) / 2; // the stage's top-left corner on screen (CSS px)
+  const y0 = H - 1080 * s;
   if (ZOOM_STAGE) {
     stage.style.zoom = s;
-    stage.style.left = `${(window.innerWidth / s - 1920) / 2}px`;
-    stage.style.top = `${(window.innerHeight / s - 1080) / 2}px`;
+    stage.style.left = `${x0 / s}px`;
+    stage.style.top = `${y0 / s}px`;
     stage.style.transform = 'translate(0px, 0px)';
-  } else stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+  } else {
+    stage.style.left = '0px';
+    stage.style.top = '0px';
+    stage.style.transformOrigin = '0 0';
+    stage.style.transform = `translate(${x0}px, ${y0}px) scale(${s})`;
+  }
   /* The camera rig, the sprites and other small movers keep will-change:
      transform, and Chrome keeps such a layer at the scale it was first painted at:
      after the window grows (or a tablet turns) the game would stay blurred,
@@ -43,19 +91,40 @@ function fitStage() {
   }
   const root = document.documentElement.style;
   root.setProperty('--s', s);
+  // a phone (the stage at under 0.45x): the small corner controls grow
+  // ("Phones" in css/style.css)
+  stage.classList.toggle('compact', s < 0.45);
+  // what the screen shows, in stage px (bottom-aligned: b is always 1080)
+  const vis = { l: -x0 / s, t: -y0 / s, r: (W - x0) / s, b: (H - y0) / s };
+  /* The UI's edges: the visible area less the safe-area insets.  The HUD,
+     timer, bar, RUN / JUMP and the popups anchor to these (css: --vis-*),
+     so on a 4:3 tablet the HUD is in the screen's corner, not floating
+     where a 16:9 stage would end, and on an iPhone it clears the notch. */
+  const ins = safeInsets();
+  const safe = { l: vis.l + ins.l / s, t: vis.t + ins.t / s, r: vis.r - ins.r / s, b: vis.b - ins.b / s };
+  const r1 = (v) => Math.round(v * 10) / 10 + 'px';
+  root.setProperty('--vis-l', r1(safe.l));
+  root.setProperty('--vis-t', r1(safe.t));
+  root.setProperty('--vis-r', r1(safe.r));
+  root.setProperty('--vis-b', r1(safe.b));
+  root.setProperty('--vis-w', r1(safe.r - safe.l));
+  root.setProperty('--vis-h', r1(safe.b - safe.t));
   /* The screen-filling covers (popup veils, the game-over shade, the
      welcome screen - "Full-screen covers" in the CSS) only cover what this
-     screen shows of the stage (+ a margin for fx.shake), inside its design
-     box 2560 x 1700 at (-320, -300) - the GPU never blurs or blends
+     screen shows (+ a margin for fx.shake), inside the scenery's design box
+     (x -400..2320, y -1300..1180) - the GPU never blurs or blends
      off-screen area.  (The full-screen gradients are small canvases:
      paintWashes in js/scene.js.) */
   const M = 24;
-  const l = Math.max(-320, Math.floor(960 - window.innerWidth / (2 * s)) - M);
-  const t = Math.max(-300, Math.floor(540 - window.innerHeight / (2 * s)) - M);
+  const l = Math.max(-400, Math.floor(vis.l) - M);
+  const t = Math.max(-1300, Math.floor(vis.t) - M);
   root.setProperty('--ov-l', l + 'px');
   root.setProperty('--ov-t', t + 'px');
-  root.setProperty('--ov-w', Math.min(2240, 1920 - l) - l + 'px');
-  root.setProperty('--ov-h', Math.min(1400, 1080 - t) - t + 'px');
+  root.setProperty('--ov-w', Math.min(2320, Math.ceil(vis.r) + M) - l + 'px');
+  root.setProperty('--ov-h', Math.min(1180, Math.ceil(vis.b) + M) - t + 'px');
+  // for script that frames the scenery (camera shots, the game-over drift)
+  window.ZD = window.ZD || {};
+  ZD.view = { s, l: vis.l, t: vis.t, r: vis.r, b: vis.b, safe };
 }
 window.addEventListener('resize', fitStage);
 window.addEventListener('orientationchange', () => setTimeout(fitStage, 200));
